@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>w upload - API Docs</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --bg: #ffffff; --text: #333333; --card: #f8f9fa; --primary: #4361ee; --border: #e0e0e0; --code-bg: #f1f5f9; }
+        [data-theme="dark"] { --bg: #0f172a; --text: #e2e8f0; --card: #1e293b; --primary: #38bdf8; --border: #334155; --code-bg: #334155; }
+        
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; }
+        .navbar { display: flex; justify-content: space-between; padding: 1rem 2rem; background: var(--card); border-bottom: 1px solid var(--border); align-items: center; }
+        .logo { font-weight: 800; font-size: 1.5rem; color: var(--primary); text-decoration: none; }
+        .nav-links { display: flex; gap: 20px; }
+        .nav-item { color: var(--text); text-decoration: none; padding: 8px 12px; border-radius: 8px; }
+        .nav-item:hover, .nav-item.active { background: var(--primary); color: white; }
+        
+        .container { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+        .endpoint-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; }
+        .method { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; margin-right: 10px; }
+        .get { background: #22c55e; color: white; }
+        .post { background: #eab308; color: black; }
+        
+        h2 { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        code { background: var(--code-bg); padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; color: var(--text); }
+        
+        .theme-toggle { background: none; border: none; color: var(--text); font-size: 1.2rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <a href="/" class="logo">w upload</a>
+    <div class="nav-links">
+        <a href="/" class="nav-item"><i class="fa-solid fa-cloud-arrow-up"></i> <span class="nav-text">Upload</span></a>
+        <a href="/docs" class="nav-item active"><i class="fa-solid fa-book"></i> <span class="nav-text">API Docs</span></a>
+        <button class="theme-toggle" onclick="toggleTheme()"><i class="fa-solid fa-moon"></i></button>
+    </div>
+</nav>
+
+<div class="container">
+    <h1>API Documentation</h1>
+    <p>Integrate <b>w upload</b> directly into your applications.</p>
+
+    <div class="endpoint-card">
+        <h3><span class="method post">POST</span> /api/upload</h3>
+        <p>Upload a file in Base64 format.</p>
+        
+        <h4>Request Headers</h4>
+        <pre>Content-Type: application/json</pre>
+
+        <h4>Request Body (JSON)</h4>
+        <pre>{
+  "filename": "example.jpg",
+  "contentType": "image/jpeg",
+  "base64": "data:image/jpeg;base64,/9j/4AAQSw..."
+}</pre>
+
+        <h4>Success Response</h4>
+        <pre>{
+  "status": "success",
+  "id": "659d2...",
+  "filename": "659d2...jpg",
+  "url": "https://w-upload.vercel.app/file/659d2...jpg"
+}</pre>
+    </div>
+
+    <div class="endpoint-card">
+        <h3><span class="method get">GET</span> /file/:filename</h3>
+        <p>Retrieve the raw file content. This URL is playable in browsers.</p>
+        
+        <h4>Example</h4>
+        <code>GET /file/659d2b8f9a2b.jpg</code>
+        
+        <h4>Response</h4>
+        <p>Returns binary file stream (Image, Video, etc.) with correct <code>Content-Type</code>.</p>
+    </div>
+</div>
+
+<script>
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const newTheme = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        document.querySelector('.theme-toggle i').className = newTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    }
+    document.querySelector('.theme-toggle i').className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+</script>
+
+</body>
+</html>
