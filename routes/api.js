@@ -8,13 +8,13 @@ const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
-const { v4: uuidv4 } = require('uuid');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -29,9 +29,8 @@ async function sendEmail(to, subject, text) {
             from: `"w upload" <${process.env.EMAIL_USER}>`,
             to: to,
             subject: subject,
-            html: text // Menggunakan HTML untuk link yang bisa diklik
+            html: text
         };
-
         await transporter.sendMail(mailOptions);
         console.log(`Email sent successfully to: ${to}`);
         return true;
@@ -41,7 +40,6 @@ async function sendEmail(to, subject, text) {
     }
 }
 
-// --- Folder Management ---
 router.post('/folder', auth.protectApi, async (req, res) => {
     try {
         const { name, parentId } = req.body;
@@ -62,12 +60,9 @@ router.post('/folder', auth.protectApi, async (req, res) => {
     }
 });
 
-// --- Upload Logic (Standard, Guest, File Request) ---
 router.post('/upload', async (req, res) => {
     try {
         let user = null;
-        
-        // 1. Cek User Login
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
                 auth.protectApi(req, res, () => { 
@@ -77,7 +72,6 @@ router.post('/upload', async (req, res) => {
             });
         }
 
-        // 2. Cek File Request jika tidak login
         if (!user && req.body.fileRequestSlug) {
              const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
              if (reqObj) {
@@ -85,14 +79,12 @@ router.post('/upload', async (req, res) => {
                  req.body.parentId = reqObj.destinationFolder; 
              }
         } 
-        // 3. Cek Guest Mode
         else if (!user && process.env.ALLOW_GUEST_UPLOAD !== 'true') {
              return res.status(401).json({ message: 'Authentication required.' });
         }
 
         let { filename, contentType, base64, watermarkText, parentId, description, tags, hidden, expires, limit, password, hint, geo, burn, customAlias } = req.body;
         
-        // Duplicate Check (MD5)
         const buffer = Buffer.from(base64.split(',')[1], 'base64');
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
 
@@ -108,7 +100,6 @@ router.post('/upload', async (req, res) => {
             }
         }
 
-        // Alias Handling
         let finalAlias = customAlias || filename;
         let counter = 1;
         while (await File.findOne({ customAlias: finalAlias })) {
@@ -118,7 +109,6 @@ router.post('/upload', async (req, res) => {
             counter++;
         }
 
-        // Watermarking
         if (contentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
             const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
@@ -129,7 +119,6 @@ router.post('/upload', async (req, res) => {
         const base64Data = base64.split(';base64,').pop();
         const fileSize = (base64Data.length * (3/4)) - (base64Data.endsWith('==') ? 2 : (base64Data.endsWith('=') ? 1 : 0));
 
-        // Save File
         const newFile = new File({
             originalName: filename, 
             customAlias: finalAlias, 
@@ -159,7 +148,6 @@ router.post('/upload', async (req, res) => {
     }
 });
 
-// --- Remote Upload ---
 router.post('/upload/remote', auth.protectApi, async (req, res) => {
     try {
         const { url, parentId } = req.body;
@@ -186,7 +174,6 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
     }
 });
 
-// --- Chunked Upload ---
 router.post('/upload/chunk/init', auth.protectApi, async (req, res) => {
     const { filename, totalSize } = req.body;
     const sessionId = crypto.randomBytes(16).toString('hex');
@@ -230,7 +217,6 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
     res.status(201).json({ message: 'File assembled successfully' });
 });
 
-// --- File Actions (Rename, Meta, Protect, Delete) ---
 router.put('/files/:id/rename', auth.protectApi, async (req, res) => {
     try {
         await File.findOneAndUpdate({ _id: req.params.id, owner: req.user.id }, { originalName: req.body.newName });
@@ -275,7 +261,6 @@ router.delete('/files/:id', auth.protectApi, async(req, res) => {
     res.json({message:'File moved to trash'});
 });
 
-// --- Bulk Operations ---
 router.post('/files/bulk', auth.protectApi, async (req, res) => {
     const { fileIds, action, targetFolderId } = req.body;
     if (!fileIds || !Array.isArray(fileIds)) return res.status(400).json({ message: 'Invalid files' });
@@ -299,7 +284,6 @@ router.delete('/trash/empty', auth.protectApi, async (req, res) => {
     res.json({ message: 'Trash emptied' });
 });
 
-// --- Collaboration & Sharing ---
 router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
     const { username } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
@@ -325,7 +309,6 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     res.json({ message: 'Email sent' });
 });
 
-// --- Comments & Reactions ---
 router.post('/files/:alias/comment', auth.protectApi, async (req, res) => {
     const { text } = req.body;
     const file = await File.findOne({ customAlias: req.params.alias });
@@ -352,7 +335,6 @@ router.post('/files/:alias/react', auth.protectApi, async (req, res) => {
     res.json({ message: 'Reaction updated', counts: { like: file.reactions.like.length, love: file.reactions.love.length } });
 });
 
-// --- Team Management ---
 router.post('/teams', auth.protectApi, async (req, res) => {
     const { name } = req.body;
     const team = new Team({ name, owner: req.user.id, members: [req.user.id] });
@@ -379,8 +361,8 @@ router.post('/teams/:id/add', auth.protectApi, async (req, res) => {
     res.json({ message: 'Member added' });
 });
 
-// --- File Requests ---
 router.post('/file-requests', auth.protectApi, async (req, res) => {
+    const { v4: uuidv4 } = await import('uuid');
     const { label, folderId } = req.body;
     const slug = uuidv4().substring(0, 8);
     const reqFile = new FileRequest({
@@ -393,7 +375,6 @@ router.post('/file-requests', auth.protectApi, async (req, res) => {
     res.status(201).json({ link: `${req.protocol}://${req.get('host')}/req/${slug}` });
 });
 
-// --- Access Requests ---
 router.post('/files/:alias/request-access', auth.protectApi, async (req, res) => {
     const file = await File.findOne({ customAlias: req.params.alias });
     if (!file) return res.status(404).json({ message: 'File not found' });
@@ -419,7 +400,6 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
     res.json({ message: `Request ${status}` });
 });
 
-// --- Profile Settings ---
 router.put('/profile/settings', auth.protectApi, async (req, res) => {
     const { isPublicProfile, publicBio } = req.body;
     req.user.isPublicProfile = isPublicProfile;
@@ -428,7 +408,6 @@ router.put('/profile/settings', auth.protectApi, async (req, res) => {
     res.json({ message: 'Profile updated' });
 });
 
-// --- 2FA & API Keys ---
 router.post('/profile/2fa/setup', auth.protectApi, async (req, res) => {
     const secret = speakeasy.generateSecret({ name: `w-upload (${req.user.username})` });
     req.user.twoFactorSecret = secret;
@@ -462,7 +441,6 @@ router.post('/profile/api-key', auth.protectApi, async (req, res) => {
     res.status(201).json({ message: 'API Key generated.', key });
 });
 
-// --- Reporting ---
 router.post('/report/:identifier', async (req, res) => {
     const { reason, category } = req.body;
     const file = await File.findOne({ customAlias: req.params.identifier });
@@ -472,7 +450,6 @@ router.post('/report/:identifier', async (req, res) => {
     res.status(200).json({ message: 'Report submitted.' });
 });
 
-// --- Zip Placeholder ---
 router.post('/files/zip', auth.protectApi, async (req, res) => {
     res.status(501).json({ message: 'Zip compression requires streaming implementation.' });
 });

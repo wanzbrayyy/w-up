@@ -7,6 +7,7 @@ const jimp = require('jimp');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const File = require('../models/file');
 const User = require('../models/user');
@@ -14,12 +15,30 @@ const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 
-// --- Helper Functions ---
 async function sendEmail(to, subject, text) {
-    // Simulasi pengiriman email. Konfigurasi SMTP (Nodemailer) di sini untuk production.
-    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject} | Content: ${text}`);
-    return true;
+    try {
+        const mailOptions = {
+            from: `"w upload" <${process.env.EMAIL_USER}>`,
+            to: to,
+            subject: subject,
+            html: text // Menggunakan HTML untuk link yang bisa diklik
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent successfully to: ${to}`);
+        return true;
+    } catch (error) {
+        console.error('Error sending email:', error);
+        return false;
+    }
 }
 
 // --- Folder Management ---
