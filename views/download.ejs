@@ -3,39 +3,95 @@
 <main class="download-page-container">
     <div class="download-card">
         <div class="file-icon-wrapper">
-            <i class="fa-solid fa-file-arrow-down file-icon"></i>
+            <% if (file.contentType.startsWith('image/')) { %>
+                <i class="fa-solid fa-image file-icon"></i>
+            <% } else { %>
+                <i class="fa-solid fa-file-arrow-down file-icon"></i>
+            <% } %>
         </div>
         
         <h1 class="filename"><%= file.originalName %></h1>
         <div class="file-meta">
             Size: <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; 
-            Uploaded: <%= new Date(file.createdAt).toLocaleDateString() %>
+            Uploaded: <%= new Date(file.createdAt).toLocaleDateString() %> &bull;
+            Downloads: <%= file.downloads %>
+            <% if(file.lastDownloadedAt) { %> &bull; Last: <%= new Date(file.lastDownloadedAt).toLocaleDateString() %> <% } %>
         </div>
 
         <div class="preview-area" id="previewArea"></div>
 
-        <a href="<%= downloadLink %>" class="btn-download" download>
+        <% if (file.isBurnAfterRead) { %>
+            <div class="alert-box warning"><i class="fa-solid fa-fire"></i> This file will self-destruct after you download it!</div>
+        <% } %>
+
+        <a href="<%= downloadLink %>" class="btn-download" id="downloadLinkBtn" download>
             <i class="fa-solid fa-download"></i> Download File
         </a>
 
-        <div class="report-section">
-            <button id="reportBtn" class="report-btn">
-                <i class="fa-solid fa-flag"></i> Report this file
+        <!-- Social Share -->
+        <div class="share-buttons">
+            <span>Share:</span>
+            <a href="https://wa.me/?text=Download <%= file.originalName %> here: <%= downloadLink %>" target="_blank" class="share-btn whatsapp"><i class="fa-brands fa-whatsapp"></i></a>
+            <a href="https://twitter.com/intent/tweet?text=Check out this file&url=<%= downloadLink %>" target="_blank" class="share-btn twitter"><i class="fa-brands fa-twitter"></i></a>
+            <a href="mailto:?subject=File Share&body=Download link: <%= downloadLink %>" class="share-btn email"><i class="fa-solid fa-envelope"></i></a>
+            <button onclick="navigator.clipboard.writeText(window.location.href); showToast('Link copied!')" class="share-btn copy"><i class="fa-solid fa-link"></i></button>
+        </div>
+
+        <!-- Reactions -->
+        <div class="reactions">
+            <button class="react-btn" onclick="react('like')">
+                <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount"><%= file.reactions?.like?.length || 0 %></span>
+            </button>
+            <button class="react-btn" onclick="react('love')">
+                <i class="fa-solid fa-heart"></i> <span id="loveCount"><%= file.reactions?.love?.length || 0 %></span>
             </button>
         </div>
+
+        <div class="report-section">
+            <button id="reportBtn" class="report-link">Report this file</button>
+        </div>
+    </div>
+
+    <!-- Comments Section -->
+    <div class="comments-section">
+        <h3>Comments</h3>
+        <div class="comment-list" id="commentList">
+            <% file.comments.forEach(c => { %>
+                <div class="comment">
+                    <strong><%= c.username %></strong>
+                    <p><%= c.text %></p>
+                    <small><%= new Date(c.createdAt).toLocaleDateString() %></small>
+                </div>
+            <% }) %>
+        </div>
+        <% if (isLoggedIn) { %>
+            <form id="commentForm">
+                <input type="text" name="text" placeholder="Write a comment..." required>
+                <button type="submit">Post</button>
+            </form>
+        <% } else { %>
+            <p><a href="/login">Login</a> to comment.</p>
+        <% } %>
     </div>
 </main>
 
+<!-- Report Modal -->
 <div class="modal-backdrop" id="reportModal">
     <div class="modal-content">
-        <div class="modal-header">
-            <h3>Report File: <%= file.originalName %></h3>
-            <button class="modal-close">&times;</button>
-        </div>
+        <div class="modal-header"><h3>Report File</h3><button class="modal-close">&times;</button></div>
         <form id="reportForm">
             <div class="modal-form-group">
-                <label for="reason">Reason for reporting</label>
-                <textarea id="reason" name="reason" class="modal-input" rows="4" required></textarea>
+                <label>Category</label>
+                <select name="category" class="modal-input">
+                    <option>Copyright Violation</option>
+                    <option>Malware/Virus</option>
+                    <option>Inappropriate Content</option>
+                    <option>Other</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
+                <label>Reason</label>
+                <textarea name="reason" class="modal-input" rows="3" required></textarea>
             </div>
             <button type="submit" class="action-btn" style="width:100%; background: #ef4444; color: white;">Submit Report</button>
         </form>
@@ -43,8 +99,20 @@
 </div>
 
 <style>
-    .report-section { margin-top: 1.5rem; }
-    .report-btn { background: none; border: none; color: var(--muted-text); cursor: pointer; text-decoration: underline; }
+    .share-buttons { display: flex; gap: 10px; align-items: center; justify-content: center; margin: 1.5rem 0; }
+    .share-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-size: 1.1rem; }
+    .share-btn.whatsapp { background: #25D366; } .share-btn.twitter { background: #1DA1F2; } .share-btn.email { background: #ea4335; } .share-btn.copy { background: #555; border:none; cursor:pointer;}
+    
+    .reactions { display: flex; justify-content: center; gap: 15px; margin-bottom: 1rem; }
+    .react-btn { background: var(--bg); border: 1px solid var(--border); padding: 5px 15px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .react-btn:hover { background: var(--bg-hover); }
+
+    .comments-section { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    .comment { background: var(--card); padding: 1rem; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); }
+    #commentForm { display: flex; gap: 10px; }
+    #commentForm input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid var(--border); }
+    .alert-box { padding: 10px; border-radius: 5px; margin-bottom: 1rem; text-align: center; }
+    .alert-box.warning { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
 </style>
 
 <script>
@@ -55,37 +123,49 @@
     if (fileType.startsWith('image/')) {
         previewArea.style.display = 'block';
         previewArea.innerHTML = `<img src="${downloadUrl}" alt="Preview" class="preview-content">`;
-    } else if (fileType.startsWith('video/')) {
-        previewArea.style.display = 'block';
-        previewArea.innerHTML = `<video src="${downloadUrl}" controls class="preview-content"></video>`;
     }
 
     const reportModal = document.getElementById('reportModal');
-    document.getElementById('reportBtn').addEventListener('click', () => {
-        reportModal.classList.add('active');
-    });
-
-    reportModal.querySelector('.modal-close').addEventListener('click', () => {
-        reportModal.classList.remove('active');
-    });
+    document.getElementById('reportBtn').addEventListener('click', () => reportModal.classList.add('active'));
+    reportModal.querySelector('.modal-close').addEventListener('click', () => reportModal.classList.remove('active'));
 
     document.getElementById('reportForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const reason = e.target.reason.value;
-        const response = await fetch('/api/report/<%= file.customAlias %>', {
+        const formData = Object.fromEntries(new FormData(e.target));
+        const res = await fetch('/api/report/<%= file.customAlias %>', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason })
+            body: JSON.stringify(formData)
         });
-        const data = await response.json();
-        if (response.ok) {
-            showToast('Thank you for your report.', 'success');
-        } else {
-            showToast(data.message || 'Failed to submit report.', 'error');
-        }
-        reportModal.classList.remove('active');
-        e.target.reset();
+        if (res.ok) { showToast('Report submitted.', 'success'); reportModal.classList.remove('active'); }
     });
+
+    async function react(type) {
+        const res = await fetch('/api/files/<%= file.customAlias %>/react', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type})
+        });
+        const data = await res.json();
+        if(res.ok) {
+            document.getElementById('likeCount').textContent = data.counts.like;
+            document.getElementById('loveCount').textContent = data.counts.love;
+        }
+    }
+
+    const commentForm = document.getElementById('commentForm');
+    if(commentForm) {
+        commentForm.addEventListener('submit', async(e) => {
+            e.preventDefault();
+            const text = e.target.text.value;
+            const res = await fetch('/api/files/<%= file.customAlias %>/comment', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text})
+            });
+            if(res.ok) location.reload();
+        });
+    }
 </script>
 
 <%- include('partials/footer') %>

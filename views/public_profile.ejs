@@ -1,0 +1,29 @@
+<%- include('partials/header', { title: targetUser.username, pageCss: 'dashboard' }) %>
+
+<main class="dashboard-container" style="text-align: center;">
+    <div class="profile-header" style="margin-bottom: 2rem;">
+        <div style="font-size: 4rem; color: var(--primary);"><i class="fa-solid fa-circle-user"></i></div>
+        <h1><%= targetUser.username %></h1>
+        <p style="color: var(--muted-text);"><%= targetUser.publicBio || 'No bio available.' %></p>
+    </div>
+
+    <div class="file-grid">
+        <% files.forEach(file => { %>
+            <div class="file-card">
+                <div class="file-preview">
+                    <% if (file.contentType.startsWith('image/')) { %>
+                        <i class="fa-solid fa-image"></i>
+                    <% } else { %>
+                        <i class="fa-solid fa-file"></i>
+                    <% } %>
+                </div>
+                <div class="file-details">
+                    <a href="/w-upload/file/<%= file.customAlias %>" class="filename"><%= file.originalName %></a>
+                    <div class="meta"><%= (file.size / 1024 / 1024).toFixed(2) %> MB</div>
+                </div>
+            </div>
+        <% }) %>
+    </div>
+</main>
+
+<%- include('partials/footer') %>

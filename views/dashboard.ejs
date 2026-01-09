@@ -1,360 +1,409 @@
 <%- include('partials/header', { title: 'Dashboard', pageCss: 'dashboard' }) %>
 
-<main class="dashboard-container">
-    <section class="uploader-section">
-        <div class="upload-actions">
-            <button class="upload-btn" id="uploadBtn">
-                <i class="fa-solid fa-cloud-arrow-up"></i> Choose Files
-            </button>
-            <div class="upload-options">
-                <button class="upload-option-btn" id="uploadFilesBtn">Upload Files</button>
-                <span>&bull;</span>
-                <button class="upload-option-btn" id="uploadFolderBtn">Upload Folder</button>
-            </div>
+<div class="dashboard-layout">
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <aside class="sidebar" id="mainSidebar">
+        <div class="sidebar-header-mobile">
+            <h3>Menu</h3>
+            <button class="icon-btn" id="closeSidebarBtn"><i class="fa-solid fa-times"></i></button>
         </div>
 
-        <div class="modal-form-group" style="margin-top: 1rem; max-width: 400px; margin-left: auto; margin-right: auto;">
-            <input type="text" id="watermarkText" class="search-input" style="border-radius: 0.5rem;" placeholder="Optional: Watermark text for images">
+        <div class="sidebar-menu">
+            <a href="/dashboard" class="menu-item <%= !query.filter && !query.type ? 'active' : '' %>">
+                <i class="fa-solid fa-hard-drive"></i> My Files
+            </a>
+            <a href="/dashboard?filter=shared" class="menu-item <%= query.filter === 'shared' ? 'active' : '' %>">
+                <i class="fa-solid fa-users"></i> Shared with me
+            </a>
+            <a href="/dashboard?filter=starred" class="menu-item <%= query.filter === 'starred' ? 'active' : '' %>">
+                <i class="fa-solid fa-star"></i> Starred
+            </a>
+            <a href="/dashboard/teams" class="menu-item">
+                <i class="fa-solid fa-people-group"></i> Teams
+            </a>
+            <a href="/dashboard?filter=trash" class="menu-item <%= query.filter === 'trash' ? 'active' : '' %>">
+                <i class="fa-solid fa-trash-can"></i> Trash
+            </a>
+            
+            <div class="separator"></div>
+            <p class="menu-header">Types</p>
+            <a href="/dashboard?type=image" class="menu-item <%= query.type === 'image' ? 'active' : '' %>">
+                <i class="fa-solid fa-image"></i> Images
+            </a>
+            <a href="/dashboard?type=video" class="menu-item <%= query.type === 'video' ? 'active' : '' %>">
+                <i class="fa-solid fa-video"></i> Videos
+            </a>
+            <a href="/dashboard?type=doc" class="menu-item <%= query.type === 'doc' ? 'active' : '' %>">
+                <i class="fa-solid fa-file-lines"></i> Documents
+            </a>
         </div>
-
-        <input type="file" id="fileInput" multiple hidden>
-        <input type="file" id="folderInput" webkitdirectory hidden>
-
-        <div id="uploadProgressContainer" class="upload-progress-container"></div>
-    </section>
-
-    <section class="files-section">
-        <div class="dashboard-toolbar">
-            <form class="search-form" method="GET">
-                <input type="search" name="q" class="search-input" placeholder="Search files..." value="<%= query.q || '' %>">
-                <button type="submit" class="search-btn"><i class="fa-solid fa-search"></i></button>
-            </form>
-            <form class="sort-filter-form" method="GET" id="sortForm">
-                <select name="sortBy" class="sort-select">
-                    <option value="createdAt" <%= query.sortBy === 'createdAt' ? 'selected' : '' %>>Date</option>
-                    <option value="customAlias" <%= query.sortBy === 'customAlias' ? 'selected' : '' %>>Name</option>
-                    <option value="size" <%= query.sortBy === 'size' ? 'selected' : '' %>>Size</option>
-                </select>
-                <select name="sortOrder" class="sort-select">
-                    <option value="desc" <%= query.sortOrder === 'desc' ? 'selected' : '' %>>Desc</option>
-                    <option value="asc" <%= query.sortOrder === 'asc' ? 'selected' : '' %>>Asc</option>
-                </select>
-            </form>
-            <div class="view-toggles">
-                <button type="button" class="view-btn active" id="listViewBtn"><i class="fa-solid fa-list"></i></button>
-                <button type="button" class="view-btn" id="gridViewBtn"><i class="fa-solid fa-grip"></i></button>
-            </div>
-            <div class="selection-actions">
-                <button class="action-btn" id="downloadZipBtn" disabled><i class="fa-solid fa-file-zipper"></i> ZIP</button>
-            </div>
+        
+        <div class="storage-info">
+            <div class="progress-bar"><div class="fill" style="width: 50%"></div></div>
+            <small>Storage Usage (Demo)</small>
         </div>
+    </aside>
 
-        <div class="file-list" id="fileList">
+    <main class="main-content" id="dropZone">
+        <section class="action-bar">
+            <div class="left-actions">
+                <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <button class="primary-btn" id="uploadBtn">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> <span>Upload</span>
+                </button>
+                <div class="dropdown">
+                    <button class="secondary-btn">
+                        <i class="fa-solid fa-plus"></i> <span>New</span>
+                    </button>
+                    <div class="dropdown-content">
+                        <a href="#" id="newFolderBtn"><i class="fa-solid fa-folder-plus"></i> Folder</a>
+                        <a href="#" id="remoteUploadBtn"><i class="fa-solid fa-link"></i> Remote URL</a>
+                        <a href="#" id="fileRequestBtn"><i class="fa-solid fa-file-import"></i> File Request</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="search-bar-wrapper">
+                <form method="GET" action="/dashboard">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" name="q" placeholder="Search..." value="<%= query.q || '' %>">
+                </form>
+            </div>
+
+            <div class="right-actions">
+                <% if (query.filter === 'trash') { %>
+                    <button class="danger-btn" id="emptyTrashBtn">Empty Trash</button>
+                <% } else { %>
+                    <a href="/dashboard?sortBy=createdAt&sortOrder=<%= query.sortOrder === 'asc' ? 'desc' : 'asc' %>" class="icon-btn" title="Sort Date">
+                        <i class="fa-solid fa-arrow-down-wide-short"></i>
+                    </a>
+                <% } %>
+            </div>
+        </section>
+
+        <% if (breadcrumbs && breadcrumbs.length > 0) { %>
+            <div class="breadcrumbs">
+                <a href="/dashboard"><i class="fa-solid fa-home"></i></a>
+                <% breadcrumbs.forEach(bc => { %>
+                    <span>/</span>
+                    <a href="/dashboard?folderId=<%= bc.id %>"><%= bc.name %></a>
+                <% }) %>
+            </div>
+        <% } %>
+
+        <section class="file-grid" id="fileGrid">
+            <% if (files.length === 0) { %>
+                <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted-text);">
+                    <i class="fa-solid fa-folder-open" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                    <p>No files found.</p>
+                </div>
+            <% } %>
+
             <% files.forEach(file => { %>
-                <div class="file-item" data-id="<%= file._id %>">
-                    <input type="checkbox" class="file-select-checkbox" value="<%= file._id %>">
-                    <i class="fa-solid fa-file file-icon"></i>
-                    <div class="file-info">
-                        <a href="/w-upload/file/<%= file.customAlias %>" target="_blank" class="name"><%= file.customAlias %></a>
+                <div class="file-card <%= file.isFolder ? 'folder' : '' %>" 
+                     data-id="<%= file._id %>" 
+                     data-name="<%= file.originalName %>"
+                     data-alias="<%= file.customAlias %>"
+                     data-type="<%= file.isFolder ? 'folder' : 'file' %>"
+                     draggable="true">
+                    
+                    <div class="selection-check">
+                        <input type="checkbox" class="file-check" value="<%= file._id %>">
+                    </div>
+
+                    <div class="file-preview">
+                        <% if (file.isFolder) { %>
+                            <i class="fa-solid fa-folder folder-icon"></i>
+                        <% } else if (file.contentType.startsWith('image/')) { %>
+                            <i class="fa-solid fa-image image-icon"></i>
+                        <% } else if (file.contentType.startsWith('video/')) { %>
+                            <i class="fa-solid fa-video video-icon"></i>
+                        <% } else { %>
+                            <i class="fa-solid fa-file file-icon"></i>
+                        <% } %>
+                    </div>
+                    
+                    <div class="file-details">
+                        <a href="<%= file.isFolder ? `/dashboard?folderId=${file._id}` : `/w-upload/file/${file.customAlias}` %>" class="filename">
+                            <%= file.originalName %>
+                        </a>
                         <div class="meta">
-                            <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; <%= new Date(file.createdAt).toLocaleDateString() %>
-                        </div>
-                        <div class="file-downloads">
-                            <i class="fa-solid fa-download"></i> <%= file.downloads || 0 %>
-                            <% if (file.password) { %> <i class="fa-solid fa-lock" style="margin-left: 5px; color: #f59e0b;" title="Protected"></i> <% } %>
+                            <% if (!file.isFolder) { %>
+                                <%= (file.size / 1024 / 1024).toFixed(2) %> MB
+                            <% } else { %>
+                                <% if(file.collaborators && file.collaborators.length > 0) { %>
+                                    <i class="fa-solid fa-users" title="Shared Folder"></i>
+                                <% } else { %>
+                                    Folder
+                                <% } %>
+                            <% } %>
+                            <% if (file.isStarred) { %><i class="fa-solid fa-star star-indicator"></i><% } %>
                         </div>
                     </div>
-                    <div class="file-actions">
-                        <button class="action-btn protect-btn" data-id="<%= file._id %>"><i class="fa-solid fa-shield-halved"></i></button>
-                        <button class="action-btn edit-btn" data-alias="<%= file.customAlias %>"><i class="fa-solid fa-pencil"></i></button>
-                        <button class="action-btn delete-btn"><i class="fa-solid fa-trash"></i></button>
-                    </div>
+
+                    <div class="context-trigger"><i class="fa-solid fa-ellipsis-vertical"></i></div>
                 </div>
             <% }) %>
-            <% if (files.length === 0) { %>
-                <p style="color: var(--muted-text); text-align: center; padding: 2rem;">No files found.</p>
-            <% } %>
-        </div>
-    </section>
-</main>
+        </section>
 
-<div class="modal-backdrop" id="editModal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>Edit File Name</h3>
-            <button class="modal-close" id="closeEditModal">&times;</button>
+        <div class="bulk-actions" id="bulkActions">
+            <span><span id="selectedCount">0</span> Selected</span>
+            <div class="actions">
+                <button id="bulkStarBtn" title="Star/Unstar"><i class="fa-solid fa-star"></i></button>
+                <button id="bulkMoveBtn" title="Move"><i class="fa-solid fa-folder-open"></i></button>
+                <button id="bulkDeleteBtn" class="danger" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </div>
         </div>
-        <form id="editForm">
-            <input type="text" id="newAliasInput" class="search-input" style="border-radius:0.5rem; margin-bottom: 1rem;" required>
-            <button type="submit" class="action-btn" style="width:100%; background: var(--primary); color: white;">Save Changes</button>
-        </form>
+    </main>
+</div>
+
+<div class="context-menu" id="contextMenu">
+    <ul>
+        <li id="cmOpen"><i class="fa-solid fa-up-right-from-square"></i> Open</li>
+        <li id="cmShare"><i class="fa-solid fa-share-nodes"></i> Share</li>
+        <li id="cmCopyLink"><i class="fa-solid fa-link"></i> Copy Link</li>
+        <li id="cmRename"><i class="fa-solid fa-pen"></i> Rename</li>
+        <li id="cmStar"><i class="fa-solid fa-star"></i> Star/Unstar</li>
+        <li id="cmInfo"><i class="fa-solid fa-circle-info"></i> Details</li>
+        <li id="cmDelete" class="danger"><i class="fa-solid fa-trash"></i> Delete</li>
+    </ul>
+</div>
+
+<!-- Modals -->
+<div class="modal" id="shareModal">
+    <div class="modal-box" style="max-width: 500px;">
+        <h3>Share Settings</h3>
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="tab-link">Link</button>
+            <button class="tab-btn" data-tab="tab-protect">Protection</button>
+            <button class="tab-btn" data-tab="tab-collab">Collaborators</button>
+            <button class="tab-btn" data-tab="tab-email">Email</button>
+        </div>
+        <div class="tab-content active" id="tab-link">
+            <p>Anyone with this link can view the file.</p>
+            <input type="text" id="shareLinkInput" class="full-input" readonly>
+            <button class="btn secondary-btn" onclick="navigator.clipboard.writeText(document.getElementById('shareLinkInput').value); showToast('Link copied!')">Copy Link</button>
+        </div>
+        <div class="tab-content" id="tab-protect">
+            <input type="password" id="sharePassword" class="full-input" placeholder="Password (optional)">
+            <input type="text" id="shareHint" class="full-input" placeholder="Password Hint (optional)">
+            <input type="number" id="shareExpires" class="full-input" placeholder="Expire after (hours)">
+            <label><input type="checkbox" id="shareBurn"> Burn after read (delete after first download)</label>
+        </div>
+        <div class="tab-content" id="tab-collab">
+            <input type="text" id="shareCollabUser" class="full-input" placeholder="Enter username to add">
+            <button class="btn confirm-btn" id="addCollabBtn">Add Collaborator</button>
+        </div>
+        <div class="tab-content" id="tab-email">
+            <input type="email" id="shareEmail" class="full-input" placeholder="Recipient's email address">
+            <button class="btn confirm-btn" id="sendEmailBtn">Send Email</button>
+        </div>
+        <div class="modal-footer">
+            <button class="btn cancel-btn">Close</button>
+            <button class="btn confirm-btn" id="saveShareSettingsBtn">Save Changes</button>
+        </div>
     </div>
 </div>
 
-<div class="modal-backdrop" id="protectModal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>File Protection</h3>
-            <button class="modal-close" id="closeProtectModal">&times;</button>
+<div class="modal" id="fileRequestModal">
+    <div class="modal-box">
+        <h3>Create File Request Link</h3>
+        <input type="text" id="fileRequestLabel" placeholder="Label (e.g., 'Project Submissions')" class="full-input">
+        <div class="modal-footer">
+            <button class="btn cancel-btn">Cancel</button>
+            <button class="btn confirm-btn" id="createFileRequestBtn">Create</button>
         </div>
-        <form id="protectForm">
-            <div class="modal-form-group">
-                <label for="password">Password (optional)</label>
-                <input type="password" name="password" id="password" class="modal-input" placeholder="Leave blank to remove/keep">
-            </div>
-            <div class="modal-form-group">
-                <label for="expires">Expire After (hours, optional)</label>
-                <input type="number" name="expires" id="expires" class="modal-input" min="1" placeholder="e.g., 24">
-            </div>
-            <div class="modal-form-group">
-                <label for="limit">Download Limit (optional)</label>
-                <input type="number" name="limit" id="limit" class="modal-input" min="1" placeholder="e.g., 10">
-            </div>
-            <button type="submit" class="action-btn" style="width:100%;background:var(--primary);color:white;">Set Protection</button>
-        </form>
     </div>
 </div>
+
+<div class="modal" id="folderModal"><div class="modal-box"><h3>New Folder</h3><input type="text" id="folderNameInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="createFolderBtn">Create</button></div></div></div>
+<div class="modal" id="remoteModal"><div class="modal-box"><h3>Remote Upload</h3><input type="url" id="remoteUrlInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="startRemoteBtn">Fetch</button></div></div></div>
+<div class="modal" id="renameModal"><div class="modal-box"><h3>Rename</h3><input type="text" id="renameInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="confirmRenameBtn">Save</button></div></div></div>
+<div class="modal" id="metaModal"><div class="modal-box"><h3>Details</h3><textarea id="descInput" placeholder="Description" class="full-input"></textarea><input type="text" id="tagsInput" placeholder="Tags (comma, separated)" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="saveMetaBtn">Save</button></div></div></div>
+
+<input type="file" id="fileInput" multiple hidden>
+
+<style>
+    .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    .tab-btn { background: none; border: none; padding: 0.75rem 1rem; cursor: pointer; color: var(--muted-text); border-bottom: 2px solid transparent; }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+</style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const fileInput = document.getElementById('fileInput');
-        const folderInput = document.getElementById('folderInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const uploadFilesBtn = document.getElementById('uploadFilesBtn');
-        const uploadFolderBtn = document.getElementById('uploadFolderBtn');
-        const progressContainer = document.getElementById('uploadProgressContainer');
-        const watermarkInput = document.getElementById('watermarkText');
+document.addEventListener('DOMContentLoaded', () => {
+    const currentFolderId = new URLSearchParams(window.location.search).get('folderId');
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    
+    const sidebar = document.getElementById('mainSidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+    function toggleSidebar() { sidebar.classList.toggle('active'); sidebarOverlay.classList.toggle('active'); }
+    if(sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
+    if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
+    if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
 
-        uploadBtn.addEventListener('click', () => fileInput.click());
-        uploadFilesBtn.addEventListener('click', () => fileInput.click());
-        uploadFolderBtn.addEventListener('click', () => folderInput.click());
+    document.getElementById('uploadBtn').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleUpload(e.target.files));
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleUpload(e.dataTransfer.files); });
+    document.addEventListener('paste', (e) => {
+        const files = Array.from(e.clipboardData.items).filter(i => i.kind === 'file').map(i => i.getAsFile());
+        if (files.length > 0) handleUpload(files);
+    });
 
-        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-        folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-        function handleFiles(files) {
-            let totalFiles = files.length;
-            let completedFiles = 0;
-
-            for (const file of files) {
-                uploadFile(file, () => {
-                    completedFiles++;
-                    if (completedFiles === totalFiles) {
-                        showToast('All uploads finished!', 'success');
-                        setTimeout(() => location.reload(), 1000);
-                    }
-                });
-            }
-            fileInput.value = '';
-            folderInput.value = '';
+    async function handleUpload(files) {
+        showToast(`Uploading ${files.length} files...`, 'info');
+        for (const file of files) {
+            await uploadStandard(file);
         }
-
-        function uploadFile(file, onComplete) {
-            const progressId = `progress-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            const progressHTML = `
-                <div class="upload-progress-item" id="${progressId}">
-                    <div class="file-info">
-                        <div class="file-name">${file.name}</div>
-                        <div class="progress-bar">
-                            <div class="progress-fill"></div>
-                        </div>
-                    </div>
-                    <div class="status-icon">
-                        <span class="percentage">0%</span>
-                    </div>
-                </div>
-            `;
-            progressContainer.insertAdjacentHTML('beforeend', progressHTML);
-            progressContainer.style.display = 'flex';
-
-            const progressItem = document.getElementById(progressId);
-            const progressFill = progressItem.querySelector('.progress-fill');
-            const percentageText = progressItem.querySelector('.percentage');
-            const statusIcon = progressItem.querySelector('.status-icon');
-
+        setTimeout(() => location.reload(), 1500);
+    }
+    
+    function uploadStandard(file) {
+        return new Promise((resolve) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = () => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '/api/upload', true);
-                xhr.setRequestHeader('Content-Type', 'application/json');
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        progressFill.style.width = `${percent}%`;
-                        percentageText.textContent = `${percent}%`;
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status === 201) {
-                        statusIcon.innerHTML = '<i class="fa-solid fa-check-circle"></i>';
-                        progressFill.style.backgroundColor = '#22c55e';
-                    } else {
-                        statusIcon.innerHTML = '<i class="fa-solid fa-times-circle"></i>';
-                        progressFill.style.backgroundColor = '#ef4444';
-                        try {
-                            const res = JSON.parse(xhr.responseText);
-                            showToast(res.message, 'error');
-                        } catch (e) {
-                            showToast('Upload failed', 'error');
-                        }
-                    }
-                    onComplete();
-                };
-
-                xhr.onerror = () => {
-                    statusIcon.innerHTML = '<i class="fa-solid fa-times-circle"></i>';
-                    progressFill.style.backgroundColor = '#ef4444';
-                    showToast('Network error', 'error');
-                    onComplete();
-                };
-
-                const payload = {
-                    filename: file.name,
-                    contentType: file.type || 'application/octet-stream',
-                    base64: reader.result,
-                    watermarkText: watermarkInput.value
-                };
-                xhr.send(JSON.stringify(payload));
-            };
-        }
-
-        const fileList = document.getElementById('fileList');
-        const listViewBtn = document.getElementById('listViewBtn');
-        const gridViewBtn = document.getElementById('gridViewBtn');
-        
-        listViewBtn.addEventListener('click', () => {
-            fileList.classList.remove('grid-view');
-            listViewBtn.classList.add('active');
-            gridViewBtn.classList.remove('active');
-        });
-        
-        gridViewBtn.addEventListener('click', () => {
-            fileList.classList.add('grid-view');
-            gridViewBtn.classList.add('active');
-            listViewBtn.classList.remove('active');
-        });
-
-        const sortForm = document.getElementById('sortForm');
-        sortForm.addEventListener('change', () => sortForm.submit());
-
-        const selectedFiles = new Set();
-        const downloadZipBtn = document.getElementById('downloadZipBtn');
-        document.querySelectorAll('.file-select-checkbox').forEach(cb => {
-            cb.addEventListener('change', () => {
-                if (cb.checked) selectedFiles.add(cb.value);
-                else selectedFiles.delete(cb.value);
-                downloadZipBtn.disabled = selectedFiles.size === 0;
-            });
-        });
-
-        downloadZipBtn.addEventListener('click', async () => {
-            const fileIds = Array.from(selectedFiles);
-            downloadZipBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Zipping...';
-            try {
-                const response = await fetch('/api/files/zip', {
+            reader.onload = async () => {
+                const res = await fetch('/api/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fileIds })
+                    body: JSON.stringify({ filename: file.name, contentType: file.type, base64: reader.result, parentId: currentFolderId })
                 });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = 'w-upload.zip';
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    showToast('ZIP downloaded', 'success');
-                } else {
-                    showToast('Failed to create ZIP', 'error');
-                }
-            } catch (error) {
-                showToast('Error downloading ZIP', 'error');
-            }
-            downloadZipBtn.innerHTML = '<i class="fa-solid fa-file-zipper"></i> ZIP';
+                if(!res.ok) showToast('Upload failed', 'error');
+                resolve();
+            };
         });
+    }
 
-        const editModal = document.getElementById('editModal');
-        const protectModal = document.getElementById('protectModal');
-        let currentActionId = null;
+    const modalTriggers = { 'newFolderBtn': 'folderModal', 'remoteUploadBtn': 'remoteModal', 'fileRequestBtn': 'fileRequestModal', 'cmRename': 'renameModal', 'cmInfo': 'metaModal', 'cmShare': 'shareModal' };
+    const contextMenu = document.getElementById('contextMenu');
+    let contextTargetId = null;
+    let contextTargetAlias = null;
 
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const item = e.currentTarget.closest('.file-item');
-                currentActionId = item.dataset.id;
-                document.getElementById('newAliasInput').value = e.currentTarget.dataset.alias;
-                editModal.classList.add('active');
-            });
-        });
-
-        document.querySelectorAll('.protect-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const item = e.currentTarget.closest('.file-item');
-                currentActionId = item.dataset.id;
-                protectModal.classList.add('active');
-            });
-        });
-
-        document.getElementById('closeEditModal').addEventListener('click', () => editModal.classList.remove('active'));
-        document.getElementById('closeProtectModal').addEventListener('click', () => protectModal.classList.remove('active'));
-
-        document.getElementById('editForm').addEventListener('submit', async (e) => {
+    Object.entries(modalTriggers).forEach(([btnId, modalId]) => {
+        const btn = document.getElementById(btnId);
+        if(btn) btn.addEventListener('click', (e) => {
             e.preventDefault();
-            const res = await fetch(`/api/files/${currentActionId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ newAlias: document.getElementById('newAliasInput').value })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                showToast(data.message, 'success');
-                setTimeout(() => location.reload(), 500);
-            } else {
-                showToast(data.message, 'error');
-            }
-        });
-
-        document.getElementById('protectForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            const res = await fetch(`/api/files/${currentActionId}/protect`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const result = await res.json();
-            if (res.ok) {
-                showToast(result.message, 'success');
-                protectModal.classList.remove('active');
-                setTimeout(() => location.reload(), 500);
-            } else {
-                showToast(result.message, 'error');
-            }
-        });
-
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const item = e.currentTarget.closest('.file-item');
-                const fileId = item.dataset.id;
-                if (confirm('Delete this file permanently?')) {
-                    const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if (res.ok) {
-                        item.remove();
-                        showToast(data.message, 'success');
-                    } else {
-                        showToast(data.message, 'error');
-                    }
-                }
-            });
+            contextMenu.style.display = 'none';
+            document.getElementById(modalId).classList.add('active');
         });
     });
+
+    document.querySelectorAll('.cancel-btn, .modal').forEach(el => {
+        el.addEventListener('click', (e) => {
+            if(e.target === el) document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        });
+    });
+    
+    document.querySelectorAll('.file-card').forEach(card => {
+        card.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            contextTargetId = card.dataset.id;
+            contextTargetAlias = card.dataset.alias;
+            document.getElementById('renameInput').value = card.dataset.name;
+            document.getElementById('shareLinkInput').value = `${window.location.origin}/w-upload/file/${contextTargetAlias}`;
+            contextMenu.style.top = `${e.clientY}px`;
+            contextMenu.style.left = `${e.clientX}px`;
+            contextMenu.style.display = 'block';
+        });
+    });
+
+    document.addEventListener('click', (e) => {
+        if(!e.target.closest('.context-menu')) contextMenu.style.display = 'none';
+    });
+
+    document.getElementById('createFolderBtn').addEventListener('click', async () => {
+        await fetch('/api/folder', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: document.getElementById('folderNameInput').value, parentId: currentFolderId }) });
+        location.reload();
+    });
+
+    document.getElementById('confirmRenameBtn').addEventListener('click', async () => {
+        await fetch(`/api/files/${contextTargetId}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ newName: document.getElementById('renameInput').value }) });
+        location.reload();
+    });
+
+    document.getElementById('saveMetaBtn').addEventListener('click', async () => {
+        const body = { description: document.getElementById('descInput').value, tags: document.getElementById('tagsInput').value };
+        await fetch(`/api/files/${contextTargetId}/meta`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        location.reload();
+    });
+
+    document.getElementById('cmDelete').addEventListener('click', async () => {
+        if(confirm('Move file to trash?')) {
+            await fetch(`/api/files/${contextTargetId}`, { method: 'DELETE' });
+            location.reload();
+        }
+    });
+    
+    document.getElementById('cmCopyLink').addEventListener('click', () => {
+        const link = `${window.location.origin}/w-upload/file/${contextTargetAlias}`;
+        navigator.clipboard.writeText(link);
+        showToast('Link copied to clipboard!');
+    });
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn, .tab-content').forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.tab).classList.add('active');
+        });
+    });
+
+    document.getElementById('saveShareSettingsBtn').addEventListener('click', async () => {
+        const body = {
+            password: document.getElementById('sharePassword').value || undefined,
+            hint: document.getElementById('shareHint').value || undefined,
+            expires: document.getElementById('shareExpires').value || undefined,
+            burn: document.getElementById('shareBurn').checked
+        };
+        const res = await fetch(`/api/files/${contextTargetId}/protect`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        if(res.ok) { showToast('Protection settings saved!', 'success'); document.getElementById('shareModal').classList.remove('active'); }
+    });
+    
+    document.getElementById('addCollabBtn').addEventListener('click', async () => {
+        const username = document.getElementById('shareCollabUser').value;
+        const res = await fetch(`/api/files/${contextTargetId}/collaborator`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username }) });
+        if(res.ok) showToast(`Shared with ${username}!`, 'success');
+        else showToast('User not found or error', 'error');
+    });
+
+    document.getElementById('sendEmailBtn').addEventListener('click', async () => {
+        const email = document.getElementById('shareEmail').value;
+        const res = await fetch(`/api/files/${contextTargetId}/email-share`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email }) });
+        if(res.ok) showToast(`Email sent to ${email}!`, 'success');
+    });
+
+    document.getElementById('createFileRequestBtn').addEventListener('click', async () => {
+        const label = document.getElementById('fileRequestLabel').value;
+        const res = await fetch('/api/file-requests', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ label, folderId: currentFolderId }) });
+        const data = await res.json();
+        if(res.ok) {
+            prompt('Here is your File Request link. Share it with others:', data.link);
+            document.getElementById('fileRequestModal').classList.remove('active');
+        }
+    });
+
+    const selectedIds = new Set();
+    document.querySelectorAll('.file-check').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+            const card = e.target.closest('.file-card');
+            if (e.target.checked) { selectedIds.add(e.target.value); card.classList.add('selected'); }
+            else { selectedIds.delete(e.target.value); card.classList.remove('selected'); }
+            const bar = document.getElementById('bulkActions');
+            document.getElementById('selectedCount').textContent = selectedIds.size;
+            if(selectedIds.size > 0) bar.classList.add('active'); else bar.classList.remove('active');
+        });
+    });
+
+});
 </script>
 
 <%- include('partials/footer') %>

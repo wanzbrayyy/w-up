@@ -1,0 +1,91 @@
+<%- include('partials/header', { title: `Download ${file.originalName}`, pageCss: 'download' }) %>
+
+<main class="download-page-container">
+    <div class="download-card">
+        <div class="file-icon-wrapper">
+            <i class="fa-solid fa-file-arrow-down file-icon"></i>
+        </div>
+        
+        <h1 class="filename"><%= file.originalName %></h1>
+        <div class="file-meta">
+            Size: <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; 
+            Uploaded: <%= new Date(file.createdAt).toLocaleDateString() %>
+        </div>
+
+        <div class="preview-area" id="previewArea"></div>
+
+        <a href="<%= downloadLink %>" class="btn-download" download>
+            <i class="fa-solid fa-download"></i> Download File
+        </a>
+
+        <div class="report-section">
+            <button id="reportBtn" class="report-btn">
+                <i class="fa-solid fa-flag"></i> Report this file
+            </button>
+        </div>
+    </div>
+</main>
+
+<div class="modal-backdrop" id="reportModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Report File: <%= file.originalName %></h3>
+            <button class="modal-close">&times;</button>
+        </div>
+        <form id="reportForm">
+            <div class="modal-form-group">
+                <label for="reason">Reason for reporting</label>
+                <textarea id="reason" name="reason" class="modal-input" rows="4" required></textarea>
+            </div>
+            <button type="submit" class="action-btn" style="width:100%; background: #ef4444; color: white;">Submit Report</button>
+        </form>
+    </div>
+</div>
+
+<style>
+    .report-section { margin-top: 1.5rem; }
+    .report-btn { background: none; border: none; color: var(--muted-text); cursor: pointer; text-decoration: underline; }
+</style>
+
+<script>
+    const fileType = "<%= file.contentType %>";
+    const downloadUrl = "<%= downloadLink %>";
+    const previewArea = document.getElementById('previewArea');
+
+    if (fileType.startsWith('image/')) {
+        previewArea.style.display = 'block';
+        previewArea.innerHTML = `<img src="${downloadUrl}" alt="Preview" class="preview-content">`;
+    } else if (fileType.startsWith('video/')) {
+        previewArea.style.display = 'block';
+        previewArea.innerHTML = `<video src="${downloadUrl}" controls class="preview-content"></video>`;
+    }
+
+    const reportModal = document.getElementById('reportModal');
+    document.getElementById('reportBtn').addEventListener('click', () => {
+        reportModal.classList.add('active');
+    });
+
+    reportModal.querySelector('.modal-close').addEventListener('click', () => {
+        reportModal.classList.remove('active');
+    });
+
+    document.getElementById('reportForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const reason = e.target.reason.value;
+        const response = await fetch('/api/report/<%= file.customAlias %>', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showToast('Thank you for your report.', 'success');
+        } else {
+            showToast(data.message || 'Failed to submit report.', 'error');
+        }
+        reportModal.classList.remove('active');
+        e.target.reset();
+    });
+</script>
+
+<%- include('partials/footer') %>

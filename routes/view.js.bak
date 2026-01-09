@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken'); // <-- BARIS YANG DIPERBAIKI
+const jwt = require('jsonwebtoken');
 const File = require('../models/file');
 const User = require('../models/user');
 const auth = require('../middleware/auth');
@@ -11,10 +11,65 @@ router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ?
 router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
 router.get('/profile', auth.protectView, (req, res) => res.render('profile'));
 
+router.get('/docs', auth.checkAuthStatus, (req, res) => {
+    res.render('docs');
+});
+
 router.get('/dashboard', auth.protectView, async (req, res) => {
     try {
-        const files = await File.find({ owner: req.user.id }).sort({ createdAt: -1 }).select('-base64');
-        res.render('dashboard', { files, query: req.query });
+        const { q, sortBy, sortOrder, folderId, type, filter, tag } = req.query;
+        let query = { owner: req.user.id };
+
+        if (filter === 'trash') {
+            query.deletedAt = { $ne: null };
+        } else {
+            query.deletedAt = null;
+            if (filter === 'starred') query.isStarred = true;
+            if (!filter || filter !== 'all') query.parentId = folderId || null;
+        }
+
+        if (q) {
+            query.$or = [
+                { originalName: { $regex: q, $options: 'i' } },
+                { tags: { $in: [q] } }
+            ];
+            delete query.parentId; 
+        }
+
+        if (type) {
+            if (type === 'image') query.contentType = { $regex: '^image/' };
+            else if (type === 'video') query.contentType = { $regex: '^video/' };
+            else if (type === 'doc') query.contentType = { $regex: 'pdf|document|text' };
+            else if (type === 'folder') query.isFolder = true;
+        }
+
+        if (tag) {
+            query.tags = tag;
+        }
+
+        if (!query.isFolder && filter !== 'trash' && !q) {
+            
+        }
+
+        let sort = {};
+        if (sortBy) sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+        else sort = { isFolder: -1, createdAt: -1 };
+
+        const files = await File.find(query).sort(sort).select('-base64 -versions.base64');
+        
+        let currentFolder = null;
+        let breadcrumbs = [];
+        if (folderId) {
+            currentFolder = await File.findOne({ _id: folderId, owner: req.user.id });
+            let temp = currentFolder;
+            while(temp) {
+                breadcrumbs.unshift({ id: temp._id, name: temp.originalName });
+                if(temp.parentId) temp = await File.findById(temp.parentId);
+                else temp = null;
+            }
+        }
+
+        res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
     } catch (error) {
         res.status(500).send("Error fetching user files.");
     }
@@ -23,7 +78,7 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
 router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier }).select('-base64');
-        if (!file) return res.status(404).render('404');
+        if (!file || file.deletedAt) return res.status(404).render('404');
 
         if (file.password) {
             const token = req.cookies[`file_access_${file._id}`];
@@ -31,7 +86,7 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
             try {
                 jwt.verify(token, process.env.JWT_SECRET);
             } catch (e) {
-                return res.render('password_prompt', { file, error: 'Session expired, please enter password again.' });
+                return res.render('password_prompt', { file, error: 'Session expired.' });
             }
         }
         
@@ -61,16 +116,18 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
 router.get('/w-upload/raw/:identifier', async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
-        if (!file) return res.status(404).send('File not found');
+        if (!file || file.deletedAt) return res.status(404).send('File not found');
 
         if (file.expiresAt && file.expiresAt < new Date()) {
-            await File.deleteOne({ _id: file._id });
-            return res.status(410).send('Link has expired and file was deleted.');
+            file.deletedAt = new Date();
+            await file.save();
+            return res.status(410).send('Link has expired.');
         }
 
         if (file.downloadLimit !== undefined && file.downloadLimit <= 0) {
-            await File.deleteOne({ _id: file._id });
-            return res.status(410).send('Download limit reached and file was deleted.');
+            file.deletedAt = new Date();
+            await file.save();
+            return res.status(410).send('Download limit reached.');
         }
 
         if (file.password) {
@@ -79,7 +136,7 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
             try {
                 jwt.verify(token, process.env.JWT_SECRET);
             } catch (e) {
-                return res.status(403).send('Access denied. Invalid or expired session.');
+                return res.status(403).send('Access denied.');
             }
         }
 

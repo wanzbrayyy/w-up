@@ -4,20 +4,16 @@ const bcrypt = require('bcryptjs');
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true },
-  email: { type: String, trim: true }, 
   isTwoFactorEnabled: { type: Boolean, default: false },
-  twoFactorSecret: { ascii: String, otpauth_url: String },
-  apiKeys: [{ key: String, label: String, createdAt: { type: Date, default: Date.now } }],
-  
-  referralCode: { type: String, unique: true },
-  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  storageBonus: { type: Number, default: 0 }, 
-  
-  isPublicProfile: { type: Boolean, default: false },
-  publicBio: { type: String, default: '' },
-  
-  teams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
-  
+  twoFactorSecret: {
+    ascii: String,
+    otpauth_url: String
+  },
+  apiKeys: [{
+    key: String,
+    label: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
   loginHistory: [{
     ip: String,
     userAgent: String,
@@ -27,9 +23,6 @@ const UserSchema = new mongoose.Schema({
 });
 
 UserSchema.pre('save', async function(next) {
-  if (!this.referralCode) {
-    this.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-  }
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);

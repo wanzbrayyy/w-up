@@ -1,0 +1,76 @@
+<%- include('partials/header', { title: 'My Teams', pageCss: 'dashboard' }) %>
+
+<main class="dashboard-container">
+    <div class="action-bar">
+        <h1>My Teams</h1>
+        <button class="primary-btn" onclick="document.getElementById('newTeamModal').classList.add('active')">
+            <i class="fa-solid fa-plus"></i> Create Team
+        </button>
+    </div>
+
+    <div class="file-grid">
+        <% teams.forEach(team => { %>
+            <div class="file-card" style="aspect-ratio: auto; height: auto;">
+                <div class="file-details" style="text-align: left; padding: 0.5rem;">
+                    <h3><%= team.name %></h3>
+                    <p class="meta">Members: <%= team.members.length %></p>
+                    <p class="meta">Storage: <%= (team.usedStorage/1024/1024).toFixed(2) %> / <%= (team.storageQuota/1024/1024).toFixed(0) %> MB</p>
+                    <button class="secondary-btn" style="margin-top: 10px; width: 100%;" onclick="openAddMember('<%= team._id %>')">Add Member</button>
+                </div>
+            </div>
+        <% }) %>
+    </div>
+</main>
+
+<div class="modal" id="newTeamModal">
+    <div class="modal-box">
+        <h3>Create New Team</h3>
+        <input type="text" id="teamName" class="full-input" placeholder="Team Name">
+        <div class="modal-footer">
+            <button class="btn cancel-btn" onclick="this.closest('.modal').classList.remove('active')">Cancel</button>
+            <button class="btn confirm-btn" id="createTeamBtn">Create</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="addMemberModal">
+    <div class="modal-box">
+        <h3>Add Member to Team</h3>
+        <input type="text" id="memberUsername" class="full-input" placeholder="Username">
+        <div class="modal-footer">
+            <button class="btn cancel-btn" onclick="this.closest('.modal').classList.remove('active')">Cancel</button>
+            <button class="btn confirm-btn" id="addMemberBtn">Add</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentTeamId = null;
+    function openAddMember(id) {
+        currentTeamId = id;
+        document.getElementById('addMemberModal').classList.add('active');
+    }
+
+    document.getElementById('createTeamBtn').addEventListener('click', async () => {
+        const name = document.getElementById('teamName').value;
+        const res = await fetch('/api/teams', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name })
+        });
+        if(res.ok) location.reload();
+    });
+
+    document.getElementById('addMemberBtn').addEventListener('click', async () => {
+        const username = document.getElementById('memberUsername').value;
+        const res = await fetch(`/api/teams/${currentTeamId}/add`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username })
+        });
+        if(res.ok) location.reload();
+        else showToast('User not found', 'error');
+    });
+</script>
+
+<%- include('partials/footer') %>
