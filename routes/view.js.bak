@@ -1,0 +1,104 @@
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken'); // <-- BARIS YANG DIPERBAIKI
+const File = require('../models/file');
+const User = require('../models/user');
+const auth = require('../middleware/auth');
+
+router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
+router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login'));
+router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
+router.get('/profile', auth.protectView, (req, res) => res.render('profile'));
+
+router.get('/dashboard', auth.protectView, async (req, res) => {
+    try {
+        const files = await File.find({ owner: req.user.id }).sort({ createdAt: -1 }).select('-base64');
+        res.render('dashboard', { files, query: req.query });
+    } catch (error) {
+        res.status(500).send("Error fetching user files.");
+    }
+});
+
+router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) => {
+    try {
+        const file = await File.findOne({ customAlias: req.params.identifier }).select('-base64');
+        if (!file) return res.status(404).render('404');
+
+        if (file.password) {
+            const token = req.cookies[`file_access_${file._id}`];
+            if (!token) return res.render('password_prompt', { file });
+            try {
+                jwt.verify(token, process.env.JWT_SECRET);
+            } catch (e) {
+                return res.render('password_prompt', { file, error: 'Session expired, please enter password again.' });
+            }
+        }
+        
+        if (file.originalName.match(/\.(js|css|html|php|vue|dart|json|py|java|c|cpp|xml|ts|jsx|md|txt)$/i)) {
+            return res.render('viewer', { file, downloadLink: `/w-upload/raw/${file.customAlias}` });
+        }
+        res.render('download', { file, downloadLink: `/w-upload/raw/${file.customAlias}` });
+    } catch (error) {
+        res.status(500).send("Server Error");
+    }
+});
+
+router.post('/w-upload/file/:identifier/auth', async (req, res) => {
+    const file = await File.findOne({ customAlias: req.params.identifier }).select('-base64');
+    if (!file || !file.password) return res.redirect(`/w-upload/file/${req.params.identifier}`);
+    
+    const isMatch = await bcrypt.compare(req.body.password, file.password);
+    if (isMatch) {
+        const token = jwt.sign({ fileId: file._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.cookie(`file_access_${file._id}`, token, { httpOnly: true, maxAge: 3600000 });
+        res.redirect(`/w-upload/file/${req.params.identifier}`);
+    } else {
+        res.render('password_prompt', { file, error: 'Invalid password' });
+    }
+});
+
+router.get('/w-upload/raw/:identifier', async (req, res) => {
+    try {
+        const file = await File.findOne({ customAlias: req.params.identifier });
+        if (!file) return res.status(404).send('File not found');
+
+        if (file.expiresAt && file.expiresAt < new Date()) {
+            await File.deleteOne({ _id: file._id });
+            return res.status(410).send('Link has expired and file was deleted.');
+        }
+
+        if (file.downloadLimit !== undefined && file.downloadLimit <= 0) {
+            await File.deleteOne({ _id: file._id });
+            return res.status(410).send('Download limit reached and file was deleted.');
+        }
+
+        if (file.password) {
+            const token = req.cookies[`file_access_${file._id}`];
+            if (!token) return res.status(403).send('Password required.');
+            try {
+                jwt.verify(token, process.env.JWT_SECRET);
+            } catch (e) {
+                return res.status(403).send('Access denied. Invalid or expired session.');
+            }
+        }
+
+        if (file.downloadLimit !== undefined) {
+            file.downloadLimit -= 1;
+        }
+        file.downloads += 1;
+        await file.save();
+
+        const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
+        res.writeHead(200, {
+            'Content-Type': file.contentType,
+            'Content-Length': fileBuffer.length,
+            'Content-Disposition': `inline; filename="${file.originalName}"`
+        });
+        res.end(fileBuffer);
+    } catch (error) {
+        res.status(500).send('Server Error');
+    }
+});
+
+module.exports = router;

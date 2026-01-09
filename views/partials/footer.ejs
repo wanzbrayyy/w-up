@@ -1,0 +1,47 @@
+<script>
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const icon = document.querySelector('.theme-toggle i');
+            if (icon) {
+                icon.className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            }
+        }
+        
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            initializeTheme();
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+
+            const menuToggle = document.getElementById('mobileMenuToggle');
+            const navMenu = document.getElementById('navMenu');
+            const toggleIcon = menuToggle.querySelector('i');
+
+            if (menuToggle) {
+                menuToggle.addEventListener('click', () => {
+                    navMenu.classList.toggle('active');
+                    if (navMenu.classList.contains('active')) {
+                        toggleIcon.className = 'fa-solid fa-times';
+                    } else {
+                        toggleIcon.className = 'fa-solid fa-bars';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

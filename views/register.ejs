@@ -1,0 +1,52 @@
+<%- include('partials/header', { title: 'Register', pageCss: 'auth' }) %>
+
+<main class="auth-container">
+    <div class="auth-card">
+        <h1 class="auth-title">Create Account</h1>
+        <p class="auth-subtitle">Get started with your free account today.</p>
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" id="username" name="username" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" id="password" name="password" class="form-input" required>
+            </div>
+            <button type="submit" class="btn-submit">
+                <i class="fa-solid fa-user-plus"></i> Sign Up
+            </button>
+        </form>
+        <div class="auth-switch">
+            Already have an account? <a href="/login">Sign In</a>
+        </div>
+    </div>
+</main>
+
+<script>
+    document.getElementById('registerForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const username = e.target.username.value;
+        const password = e.target.password.value;
+
+        try {
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                showToast('Registration successful! Please log in.', 'success');
+                window.location.href = '/login';
+            } else {
+                showToast(data.message || 'Registration failed.', 'error');
+            }
+        } catch (error) {
+            showToast('An error occurred. Please try again.', 'error');
+        }
+    });
+</script>
+
+<%- include('partials/footer') %>

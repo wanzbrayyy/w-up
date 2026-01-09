@@ -1,0 +1,51 @@
+    <script>
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const icon = document.querySelector('.theme-toggle i');
+            if (icon) {
+                icon.className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            }
+        }
+        
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            initializeTheme();
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+
+            const hamburgerMenu = document.getElementById('hamburgerMenu');
+            const navLinks = document.getElementById('navLinks');
+            const overlay = document.getElementById('overlay');
+
+            function closeMenu() {
+                navLinks.classList.remove('active');
+                overlay.classList.remove('active');
+            }
+
+            if (hamburgerMenu && navLinks && overlay) {
+                hamburgerMenu.addEventListener('click', () => {
+                    navLinks.classList.toggle('active');
+                    overlay.classList.toggle('active');
+                });
+                
+                overlay.addEventListener('click', closeMenu);
+            }
+        });
+    </script>
+</body>
+</html>

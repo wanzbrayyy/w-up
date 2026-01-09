@@ -1,0 +1,175 @@
+<%- include('partials/header', { title: 'Profile', pageCss: 'profile' }) %>
+
+<main class="profile-container">
+    <div class="profile-grid">
+        <div class="main-content">
+            <section class="profile-section">
+                <div class="profile-header">
+                    <h2>Two-Factor Authentication (2FA)</h2>
+                </div>
+                <div class="profile-body" id="2fa-section">
+                    <% if (user.isTwoFactorEnabled) { %>
+                        <p>2FA is currently <strong>enabled</strong> on your account.</p>
+                        <button id="disable2faBtn" class="btn btn-danger">Disable 2FA</button>
+                    <% } else { %>
+                        <p>Enhance your account security by enabling 2FA.</p>
+                        <button id="setup2faBtn" class="btn">Setup 2FA</button>
+
+                        <div id="setup-instructions" style="display:none; margin-top: 1.5rem;">
+                            <p>1. Scan the QR code with your authenticator app.</p>
+                            <div class="qr-code-container" id="qrCodeContainer"></div>
+                            <p>2. Or manually enter this secret key:</p>
+                            <div class="secret-code" id="secretCode"></div>
+                            <p>3. Enter the 6-digit code from your app to verify.</p>
+                            <form id="verify2faForm" class="form-group" style="margin-top: 1rem;">
+                                <input type="text" id="2faTokenInput" class="form-input" placeholder="123456" required>
+                                <button type="submit" class="btn" style="margin-top: 0.5rem;">Verify & Enable</button>
+                            </form>
+                        </div>
+                    <% } %>
+                </div>
+            </section>
+
+            <section class="profile-section">
+                <div class="profile-header">
+                    <h2>API Keys</h2>
+                </div>
+                <div class="profile-body">
+                    <div class="table-container">
+                        <table class="api-key-table">
+                            <thead>
+                                <tr>
+                                    <th>Label</th>
+                                    <th>Key</th>
+                                    <th>Created</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="apiKeyList">
+                                <% user.apiKeys.forEach(key => { %>
+                                    <tr data-key-id="<%= key._id %>">
+                                        <td><%= key.label %></td>
+                                        <td><code><%= key.key.substring(0, 10) %>...</code></td>
+                                        <td><%= new Date(key.createdAt).toLocaleDateString() %></td>
+                                        <td>
+                                            <div class="api-key-actions">
+                                                <button class="btn btn-secondary copy-key-btn" data-key="<%= key.key %>">
+                                                    <i class="fa-solid fa-copy"></i>
+                                                </button>
+                                                <button class="btn btn-danger delete-key-btn">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <form id="createApiKeyForm" style="margin-top: 1.5rem;">
+                        <div class="form-group">
+                            <label for="apiKeyLabel">New API Key Label</label>
+                            <input type="text" id="apiKeyLabel" class="form-input" placeholder="e.g., My Script" required>
+                        </div>
+                        <button type="submit" class="btn">Generate Key</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+        <div class="sidebar">
+            <section class="profile-section">
+                <div class="profile-header">
+                    <h2>Login History</h2>
+                </div>
+                <div class="profile-body">
+                    <div class="table-container">
+                        <table class="history-table">
+                            <thead><tr><th>Date</th><th>IP</th></tr></thead>
+                            <tbody>
+                                <% user.loginHistory.slice().reverse().forEach(log => { %>
+                                    <tr>
+                                        <td><%= new Date(log.date).toLocaleString() %></td>
+                                        <td><%= log.ip %></td>
+                                    </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const setup2faBtn = document.getElementById('setup2faBtn');
+    if (setup2faBtn) {
+        setup2faBtn.addEventListener('click', async () => {
+            const res = await fetch('/api/profile/2fa/setup', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('qrCodeContainer').innerHTML = `<img src="${data.qrCodeUrl}" alt="QR Code">`;
+                document.getElementById('secretCode').textContent = data.secret;
+                document.getElementById('setup-instructions').style.display = 'block';
+                setup2faBtn.style.display = 'none';
+            } else {
+                showToast('Failed to start 2FA setup.', 'error');
+            }
+        });
+    }
+
+    const verify2faForm = document.getElementById('verify2faForm');
+    if (verify2faForm) {
+        verify2faForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = document.getElementById('2faTokenInput').value;
+            const res = await fetch('/api/profile/2fa/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast('2FA enabled successfully!', 'success');
+                location.reload();
+            } else {
+                showToast(data.message || 'Verification failed.', 'error');
+            }
+        });
+    }
+
+    const createApiKeyForm = document.getElementById('createApiKeyForm');
+    if (createApiKeyForm) {
+        createApiKeyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const label = document.getElementById('apiKeyLabel').value;
+            const res = await fetch('/api/profile/api-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert(`API Key Generated:\n\n${data.key}\n\nPlease save this key. You will not see it again.`);
+                location.reload();
+            } else {
+                showToast(data.message || 'Failed to create API key.', 'error');
+            }
+        });
+    }
+
+    document.querySelectorAll('.copy-key-btn').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const keyToCopy = e.currentTarget.dataset.key;
+            navigator.clipboard.writeText(keyToCopy).then(() => {
+                showToast('API Key copied to clipboard!', 'success');
+            }).catch(err => {
+                showToast('Failed to copy key.', 'error');
+            });
+        });
+    });
+});
+</script>
+
+<%- include('partials/footer') %>

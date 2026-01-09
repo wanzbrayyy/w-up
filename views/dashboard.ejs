@@ -1,0 +1,360 @@
+<%- include('partials/header', { title: 'Dashboard', pageCss: 'dashboard' }) %>
+
+<main class="dashboard-container">
+    <section class="uploader-section">
+        <div class="upload-actions">
+            <button class="upload-btn" id="uploadBtn">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Choose Files
+            </button>
+            <div class="upload-options">
+                <button class="upload-option-btn" id="uploadFilesBtn">Upload Files</button>
+                <span>&bull;</span>
+                <button class="upload-option-btn" id="uploadFolderBtn">Upload Folder</button>
+            </div>
+        </div>
+
+        <div class="modal-form-group" style="margin-top: 1rem; max-width: 400px; margin-left: auto; margin-right: auto;">
+            <input type="text" id="watermarkText" class="search-input" style="border-radius: 0.5rem;" placeholder="Optional: Watermark text for images">
+        </div>
+
+        <input type="file" id="fileInput" multiple hidden>
+        <input type="file" id="folderInput" webkitdirectory hidden>
+
+        <div id="uploadProgressContainer" class="upload-progress-container"></div>
+    </section>
+
+    <section class="files-section">
+        <div class="dashboard-toolbar">
+            <form class="search-form" method="GET">
+                <input type="search" name="q" class="search-input" placeholder="Search files..." value="<%= query.q || '' %>">
+                <button type="submit" class="search-btn"><i class="fa-solid fa-search"></i></button>
+            </form>
+            <form class="sort-filter-form" method="GET" id="sortForm">
+                <select name="sortBy" class="sort-select">
+                    <option value="createdAt" <%= query.sortBy === 'createdAt' ? 'selected' : '' %>>Date</option>
+                    <option value="customAlias" <%= query.sortBy === 'customAlias' ? 'selected' : '' %>>Name</option>
+                    <option value="size" <%= query.sortBy === 'size' ? 'selected' : '' %>>Size</option>
+                </select>
+                <select name="sortOrder" class="sort-select">
+                    <option value="desc" <%= query.sortOrder === 'desc' ? 'selected' : '' %>>Desc</option>
+                    <option value="asc" <%= query.sortOrder === 'asc' ? 'selected' : '' %>>Asc</option>
+                </select>
+            </form>
+            <div class="view-toggles">
+                <button type="button" class="view-btn active" id="listViewBtn"><i class="fa-solid fa-list"></i></button>
+                <button type="button" class="view-btn" id="gridViewBtn"><i class="fa-solid fa-grip"></i></button>
+            </div>
+            <div class="selection-actions">
+                <button class="action-btn" id="downloadZipBtn" disabled><i class="fa-solid fa-file-zipper"></i> ZIP</button>
+            </div>
+        </div>
+
+        <div class="file-list" id="fileList">
+            <% files.forEach(file => { %>
+                <div class="file-item" data-id="<%= file._id %>">
+                    <input type="checkbox" class="file-select-checkbox" value="<%= file._id %>">
+                    <i class="fa-solid fa-file file-icon"></i>
+                    <div class="file-info">
+                        <a href="/w-upload/file/<%= file.customAlias %>" target="_blank" class="name"><%= file.customAlias %></a>
+                        <div class="meta">
+                            <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; <%= new Date(file.createdAt).toLocaleDateString() %>
+                        </div>
+                        <div class="file-downloads">
+                            <i class="fa-solid fa-download"></i> <%= file.downloads || 0 %>
+                            <% if (file.password) { %> <i class="fa-solid fa-lock" style="margin-left: 5px; color: #f59e0b;" title="Protected"></i> <% } %>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="action-btn protect-btn" data-id="<%= file._id %>"><i class="fa-solid fa-shield-halved"></i></button>
+                        <button class="action-btn edit-btn" data-alias="<%= file.customAlias %>"><i class="fa-solid fa-pencil"></i></button>
+                        <button class="action-btn delete-btn"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            <% }) %>
+            <% if (files.length === 0) { %>
+                <p style="color: var(--muted-text); text-align: center; padding: 2rem;">No files found.</p>
+            <% } %>
+        </div>
+    </section>
+</main>
+
+<div class="modal-backdrop" id="editModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Edit File Name</h3>
+            <button class="modal-close" id="closeEditModal">&times;</button>
+        </div>
+        <form id="editForm">
+            <input type="text" id="newAliasInput" class="search-input" style="border-radius:0.5rem; margin-bottom: 1rem;" required>
+            <button type="submit" class="action-btn" style="width:100%; background: var(--primary); color: white;">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="protectModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>File Protection</h3>
+            <button class="modal-close" id="closeProtectModal">&times;</button>
+        </div>
+        <form id="protectForm">
+            <div class="modal-form-group">
+                <label for="password">Password (optional)</label>
+                <input type="password" name="password" id="password" class="modal-input" placeholder="Leave blank to remove/keep">
+            </div>
+            <div class="modal-form-group">
+                <label for="expires">Expire After (hours, optional)</label>
+                <input type="number" name="expires" id="expires" class="modal-input" min="1" placeholder="e.g., 24">
+            </div>
+            <div class="modal-form-group">
+                <label for="limit">Download Limit (optional)</label>
+                <input type="number" name="limit" id="limit" class="modal-input" min="1" placeholder="e.g., 10">
+            </div>
+            <button type="submit" class="action-btn" style="width:100%;background:var(--primary);color:white;">Set Protection</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const fileInput = document.getElementById('fileInput');
+        const folderInput = document.getElementById('folderInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadFilesBtn = document.getElementById('uploadFilesBtn');
+        const uploadFolderBtn = document.getElementById('uploadFolderBtn');
+        const progressContainer = document.getElementById('uploadProgressContainer');
+        const watermarkInput = document.getElementById('watermarkText');
+
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        uploadFilesBtn.addEventListener('click', () => fileInput.click());
+        uploadFolderBtn.addEventListener('click', () => folderInput.click());
+
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            let totalFiles = files.length;
+            let completedFiles = 0;
+
+            for (const file of files) {
+                uploadFile(file, () => {
+                    completedFiles++;
+                    if (completedFiles === totalFiles) {
+                        showToast('All uploads finished!', 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    }
+                });
+            }
+            fileInput.value = '';
+            folderInput.value = '';
+        }
+
+        function uploadFile(file, onComplete) {
+            const progressId = `progress-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const progressHTML = `
+                <div class="upload-progress-item" id="${progressId}">
+                    <div class="file-info">
+                        <div class="file-name">${file.name}</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                    </div>
+                    <div class="status-icon">
+                        <span class="percentage">0%</span>
+                    </div>
+                </div>
+            `;
+            progressContainer.insertAdjacentHTML('beforeend', progressHTML);
+            progressContainer.style.display = 'flex';
+
+            const progressItem = document.getElementById(progressId);
+            const progressFill = progressItem.querySelector('.progress-fill');
+            const percentageText = progressItem.querySelector('.percentage');
+            const statusIcon = progressItem.querySelector('.status-icon');
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/upload', true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        progressFill.style.width = `${percent}%`;
+                        percentageText.textContent = `${percent}%`;
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status === 201) {
+                        statusIcon.innerHTML = '<i class="fa-solid fa-check-circle"></i>';
+                        progressFill.style.backgroundColor = '#22c55e';
+                    } else {
+                        statusIcon.innerHTML = '<i class="fa-solid fa-times-circle"></i>';
+                        progressFill.style.backgroundColor = '#ef4444';
+                        try {
+                            const res = JSON.parse(xhr.responseText);
+                            showToast(res.message, 'error');
+                        } catch (e) {
+                            showToast('Upload failed', 'error');
+                        }
+                    }
+                    onComplete();
+                };
+
+                xhr.onerror = () => {
+                    statusIcon.innerHTML = '<i class="fa-solid fa-times-circle"></i>';
+                    progressFill.style.backgroundColor = '#ef4444';
+                    showToast('Network error', 'error');
+                    onComplete();
+                };
+
+                const payload = {
+                    filename: file.name,
+                    contentType: file.type || 'application/octet-stream',
+                    base64: reader.result,
+                    watermarkText: watermarkInput.value
+                };
+                xhr.send(JSON.stringify(payload));
+            };
+        }
+
+        const fileList = document.getElementById('fileList');
+        const listViewBtn = document.getElementById('listViewBtn');
+        const gridViewBtn = document.getElementById('gridViewBtn');
+        
+        listViewBtn.addEventListener('click', () => {
+            fileList.classList.remove('grid-view');
+            listViewBtn.classList.add('active');
+            gridViewBtn.classList.remove('active');
+        });
+        
+        gridViewBtn.addEventListener('click', () => {
+            fileList.classList.add('grid-view');
+            gridViewBtn.classList.add('active');
+            listViewBtn.classList.remove('active');
+        });
+
+        const sortForm = document.getElementById('sortForm');
+        sortForm.addEventListener('change', () => sortForm.submit());
+
+        const selectedFiles = new Set();
+        const downloadZipBtn = document.getElementById('downloadZipBtn');
+        document.querySelectorAll('.file-select-checkbox').forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) selectedFiles.add(cb.value);
+                else selectedFiles.delete(cb.value);
+                downloadZipBtn.disabled = selectedFiles.size === 0;
+            });
+        });
+
+        downloadZipBtn.addEventListener('click', async () => {
+            const fileIds = Array.from(selectedFiles);
+            downloadZipBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Zipping...';
+            try {
+                const response = await fetch('/api/files/zip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileIds })
+                });
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'w-upload.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    showToast('ZIP downloaded', 'success');
+                } else {
+                    showToast('Failed to create ZIP', 'error');
+                }
+            } catch (error) {
+                showToast('Error downloading ZIP', 'error');
+            }
+            downloadZipBtn.innerHTML = '<i class="fa-solid fa-file-zipper"></i> ZIP';
+        });
+
+        const editModal = document.getElementById('editModal');
+        const protectModal = document.getElementById('protectModal');
+        let currentActionId = null;
+
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.currentTarget.closest('.file-item');
+                currentActionId = item.dataset.id;
+                document.getElementById('newAliasInput').value = e.currentTarget.dataset.alias;
+                editModal.classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.protect-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.currentTarget.closest('.file-item');
+                currentActionId = item.dataset.id;
+                protectModal.classList.add('active');
+            });
+        });
+
+        document.getElementById('closeEditModal').addEventListener('click', () => editModal.classList.remove('active'));
+        document.getElementById('closeProtectModal').addEventListener('click', () => protectModal.classList.remove('active'));
+
+        document.getElementById('editForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const res = await fetch(`/api/files/${currentActionId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newAlias: document.getElementById('newAliasInput').value })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast(data.message, 'error');
+            }
+        });
+
+        document.getElementById('protectForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const res = await fetch(`/api/files/${currentActionId}/protect`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (res.ok) {
+                showToast(result.message, 'success');
+                protectModal.classList.remove('active');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast(result.message, 'error');
+            }
+        });
+
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const item = e.currentTarget.closest('.file-item');
+                const fileId = item.dataset.id;
+                if (confirm('Delete this file permanently?')) {
+                    const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (res.ok) {
+                        item.remove();
+                        showToast(data.message, 'success');
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                }
+            });
+        });
+    });
+</script>
+
+<%- include('partials/footer') %>

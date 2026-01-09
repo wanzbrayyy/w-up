@@ -1,0 +1,47 @@
+<%- include('partials/header', { title: file.originalName, pageCss: 'viewer' }) %>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+<main class="viewer-container">
+    <div class="viewer-card">
+        <div class="viewer-header">
+            <div class="file-details">
+                <i class="fa-solid fa-code file-icon"></i>
+                <span class="file-name"><%= file.originalName %></span>
+            </div>
+            <div class="viewer-actions">
+                <button class="action-btn" id="copyCodeBtn">
+                    <i class="fa-solid fa-copy"></i> Copy
+                </button>
+                <a href="<%= downloadLink %>" class="action-btn" download>
+                    <i class="fa-solid fa-download"></i> Download
+                </a>
+            </div>
+        </div>
+        <div class="code-container">
+            <pre><code class="code-viewer" id="codeContent"></code></pre>
+        </div>
+    </div>
+</main>
+
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const response = await fetch('<%= downloadLink %>');
+            const text = await response.text();
+            const codeBlock = document.getElementById('codeContent');
+            codeBlock.textContent = text;
+            hljs.highlightElement(codeBlock);
+
+            document.getElementById('copyCodeBtn').addEventListener('click', () => {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('Code copied to clipboard!', 'success');
+                });
+            });
+        } catch (error) {
+            document.getElementById('codeContent').textContent = 'Error loading file content.';
+        }
+    });
+</script>
+
+<%- include('partials/footer') %>

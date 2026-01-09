@@ -1,97 +1,183 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>w upload - API Docs</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        :root { --bg: #ffffff; --text: #333333; --card: #f8f9fa; --primary: #4361ee; --border: #e0e0e0; --code-bg: #f1f5f9; }
-        [data-theme="dark"] { --bg: #0f172a; --text: #e2e8f0; --card: #1e293b; --primary: #38bdf8; --border: #334155; --code-bg: #334155; }
-        
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; }
-        .navbar { display: flex; justify-content: space-between; padding: 1rem 2rem; background: var(--card); border-bottom: 1px solid var(--border); align-items: center; }
-        .logo { font-weight: 800; font-size: 1.5rem; color: var(--primary); text-decoration: none; }
-        .nav-links { display: flex; gap: 20px; }
-        .nav-item { color: var(--text); text-decoration: none; padding: 8px 12px; border-radius: 8px; }
-        .nav-item:hover, .nav-item.active { background: var(--primary); color: white; }
-        
-        .container { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-        .endpoint-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; }
-        .method { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; margin-right: 10px; }
-        .get { background: #22c55e; color: white; }
-        .post { background: #eab308; color: black; }
-        
-        h2 { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        code { background: var(--code-bg); padding: 2px 5px; border-radius: 4px; font-family: monospace; }
-        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; color: var(--text); }
-        
-        .theme-toggle { background: none; border: none; color: var(--text); font-size: 1.2rem; cursor: pointer; }
-    </style>
-</head>
-<body>
+<%- include('partials/header', { title: 'API Documentation', pageCss: 'docs' }) %>
 
-<nav class="navbar">
-    <a href="/" class="logo">w upload</a>
-    <div class="nav-links">
-        <a href="/" class="nav-item"><i class="fa-solid fa-cloud-arrow-up"></i> <span class="nav-text">Upload</span></a>
-        <a href="/docs" class="nav-item active"><i class="fa-solid fa-book"></i> <span class="nav-text">API Docs</span></a>
-        <button class="theme-toggle" onclick="toggleTheme()"><i class="fa-solid fa-moon"></i></button>
-    </div>
-</nav>
+<div class="docs-container">
+    <main class="docs-main">
+        <header class="docs-header">
+            <h1>API Documentation</h1>
+            <p>Integrate w-upload into your application with our straightforward API.</p>
+        </header>
 
-<div class="container">
-    <h1>API Documentation</h1>
-    <p>Integrate <b>w upload</b> directly into your applications.</p>
+        <section class="endpoint-section" id="authentication">
+            <h2 class="endpoint-title">Authentication</h2>
+            <div class="endpoint-details">
+                <div class="description-block">
+                    <h3>API Key Authentication</h3>
+                    <p>
+                        Most API endpoints require authentication via an API key. 
+                        You can generate and manage your API keys in your <a href="/profile">profile settings</a>.
+                    </p>
+                    <p>
+                        The API key must be sent as a cookie named <code>token</code>. For server-side applications, you can include it in your requests.
+                    </p>
+                </div>
+                <div class="code-example-block">
+                    <div class="code-tabs">
+                        <button class="code-tab active" data-lang="js">Node.js</button>
+                        <button class="code-tab" data-lang="py">Python</button>
+                    </div>
+                    <div class="code-content active" data-lang="js">
+                        <pre><code class="language-js"><span class="keyword">const</span> headers = {
+  <span class="string">'Cookie'</span>: <span class="string">'token=YOUR_API_KEY'</span>
+};</code></pre>
+                    </div>
+                    <div class="code-content" data-lang="py">
+                        <pre><code class="language-python">headers = {
+    <span class="string">'Cookie'</span>: <span class="string">'token=YOUR_API_KEY'</span>
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-    <div class="endpoint-card">
-        <h3><span class="method post">POST</span> /api/upload</h3>
-        <p>Upload a file in Base64 format.</p>
-        
-        <h4>Request Headers</h4>
-        <pre>Content-Type: application/json</pre>
+        <section class="endpoint-section" id="upload-file">
+            <h2 class="endpoint-title">Upload a File</h2>
+            <div class="endpoint-details">
+                <div class="description-block">
+                    <h3><span class="method-badge post">POST</span> /api/upload</h3>
+                    <p>
+                        Uploads a single file. The file content must be sent as a Base64 encoded string.
+                    </p>
+                    <h4>Body Parameters</h4>
+                    <table class="param-table">
+                        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td><code>filename</code><span class="required">Required</span></td>
+                                <td>String</td>
+                                <td>The full name of the file, including extension.</td>
+                            </tr>
+                            <tr>
+                                <td><code>contentType</code><span class="required">Required</span></td>
+                                <td>String</td>
+                                <td>The MIME type of the file (e.g., <code>image/jpeg</code>).</td>
+                            </tr>
+                            <tr>
+                                <td><code>base64</code><span class="required">Required</span></td>
+                                <td>String</td>
+                                <td>The file content encoded in Base64 with data URI scheme.</td>
+                            </tr>
+                            <tr>
+                                <td><code>watermarkText</code></td>
+                                <td>String</td>
+                                <td>Optional text to apply as a watermark on image files.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="code-example-block">
+                    <div class="code-tabs">
+                        <button class="code-tab active" data-lang="js">Node.js (fetch)</button>
+                        <button class="code-tab" data-lang="py">Python (requests)</button>
+                        <button class="code-tab" data-lang="sh">cURL</button>
+                    </div>
+                    <div class="code-content active" data-lang="js">
+                        <pre><code class="language-js"><span class="comment">// Assuming 'fileAsBase64' is your Base64 string</span>
+<span class="keyword">const</span> body = JSON.<span class="function">stringify</span>({
+  filename: <span class="string">'example.png'</span>,
+  contentType: <span class="string">'image/png'</span>,
+  base64: fileAsBase64
+});
 
-        <h4>Request Body (JSON)</h4>
-        <pre>{
-  "filename": "example.jpg",
-  "contentType": "image/jpeg",
-  "base64": "data:image/jpeg;base64,/9j/4AAQSw..."
-}</pre>
+<span class="keyword">const</span> response = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/upload'</span>, {
+  method: <span class="string">'POST'</span>,
+  headers: {
+    <span class="string">'Content-Type'</span>: <span class="string">'application/json'</span>,
+    <span class="string">'Cookie'</span>: <span class="string">'token=YOUR_API_KEY'</span>
+  },
+  body
+});
+<span class="keyword">const</span> data = <span class="keyword">await</span> response.<span class="function">json</span>();</code></pre>
+                    </div>
+                    <div class="code-content" data-lang="py">
+                        <pre><code class="language-python"><span class="keyword">import</span> requests
+<span class="keyword">import</span> json
 
-        <h4>Success Response</h4>
-        <pre>{
-  "status": "success",
-  "id": "659d2...",
-  "filename": "659d2...jpg",
-  "url": "https://w-upload.vercel.app/file/659d2...jpg"
-}</pre>
-    </div>
+url = <span class="string">"https://w-upload.vercel.app/api/upload"</span>
+payload = json.dumps({
+  <span class="string">"filename"</span>: <span class="string">"hello.txt"</span>,
+  <span class="string">"contentType"</span>: <span class="string">"text/plain"</span>,
+  <span class="string">"base64"</span>: <span class="string">"data:text/plain;base64,SGVsbG8sIFdvcmxkIQ=="</span>
+})
+headers = {
+  <span class="string">'Content-Type'</span>: <span class="string">'application/json'</span>,
+  <span class="string">'Cookie'</span>: <span class="string">'token=YOUR_API_KEY'</span>
+}
 
-    <div class="endpoint-card">
-        <h3><span class="method get">GET</span> /file/:filename</h3>
-        <p>Retrieve the raw file content. This URL is playable in browsers.</p>
-        
-        <h4>Example</h4>
-        <code>GET /file/659d2b8f9a2b.jpg</code>
-        
-        <h4>Response</h4>
-        <p>Returns binary file stream (Image, Video, etc.) with correct <code>Content-Type</code>.</p>
-    </div>
+response = requests.request(<span class="string">"POST"</span>, url, headers=headers, data=payload)
+print(response.text)</code></pre>
+                    </div>
+                    <div class="code-content" data-lang="sh">
+                        <pre><code class="language-bash">curl --location --request POST 'https://w-upload.vercel.app/api/upload' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: token=YOUR_API_KEY' \
+--data-raw '{
+    "filename": "hello.txt",
+    "contentType": "text/plain",
+    "base64": "data:text/plain;base64,SGVsbG8sIFdvcmxkIQ=="
+}'</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+         <section class="endpoint-section" id="view-file">
+            <h2 class="endpoint-title">View/Download a File</h2>
+            <div class="endpoint-details">
+                <div class="description-block">
+                    <h3><span class="method-badge get">GET</span> /w-upload/file/:identifier</h3>
+                    <p>
+                        This is a public endpoint. It redirects to the download or viewer page for a specific file. The <code>:identifier</code> is the unique name of the file.
+                    </p>
+                    <h3><span class="method-badge get">GET</span> /w-upload/raw/:identifier</h3>
+                    <p>
+                        This endpoint delivers the raw binary data of the file, suitable for direct linking (e.g., in an <code>&lt;img&gt;</code> tag) or downloading via a script. It respects all protection settings (password, expiry, etc.).
+                    </p>
+                </div>
+                <div class="code-example-block">
+                     <div class="code-tabs"><button class="code-tab active">Example</button></div>
+                     <div class="code-content active">
+                        <pre><code><span class="comment">// Direct link to the file's content</span>
+https://w-upload.vercel.app/w-upload/raw/example.png
+
+<span class="comment">// Link to the download page</span>
+https://w-upload.vercel.app/w-upload/file/example.png
+                        </code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
 </div>
 
 <script>
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    
-    function toggleTheme() {
-        const current = document.documentElement.getAttribute('data-theme');
-        const newTheme = current === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
-        document.querySelector('.theme-toggle i').className = newTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-    }
-    document.querySelector('.theme-toggle i').className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.code-tabs').forEach(tabContainer => {
+            const tabs = tabContainer.querySelectorAll('.code-tab');
+            const contents = tabContainer.nextElementSibling.querySelectorAll('.code-content');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+
+                    const lang = tab.dataset.lang;
+                    contents.forEach(content => {
+                        content.classList.toggle('active', content.dataset.lang === lang);
+                    });
+                });
+            });
+        });
+    });
 </script>
 
-</body>
-</html>
+<%- include('partials/footer') %>

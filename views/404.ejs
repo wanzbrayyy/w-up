@@ -1,18 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>404 Not Found</title>
-    <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background: #f3f4f6; color: #333; }
-        h1 { font-size: 3rem; color: #ef4444; }
-        a { color: #2563eb; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <h1>404</h1>
-    <p>The file <b><%= identifier %></b> was not found on this server.</p>
-    <a href="/">Go Home</a>
-</body>
-</html>
+<%- include('partials/header', { title: 'Not Found' }) %>
+
+<main style="text-align: center; padding: 4rem 1rem;">
+    <h1 style="font-size: 5rem; font-weight: 800; color: var(--primary);">404</h1>
+    <h2 style="font-size: 1.5rem; margin-top: 0.5rem;">File Not Found</h2>
+    <p style="color: var(--muted-text); margin-top: 1rem;">
+        Sorry, the file you are looking for does not exist or has been moved.
+    </p>
+    <a href="/dashboard" class="nav-item" style="display: inline-block; margin-top: 2rem; background: var(--primary); color: white;">
+        Go to Dashboard
+    </a>
+</main>
+
+<%- include('partials/footer') %>
