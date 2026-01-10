@@ -1,17 +1,364 @@
-<%- include('partials/header', { title: 'Home' }) %>
+<%- include('partials/header', { title: 'home', pageCss: 'auth' }) %>
 
-<main class="auth-container">
-    <div style="text-align: center; max-width: 600px;">
-        <h1 style="font-size: 3rem; font-weight: 800; margin-bottom: 1rem;">The Simplest Way to Share Files</h1>
-        <p style="font-size: 1.125rem; color: var(--muted-text); margin-bottom: 2rem;">
-            Upload, manage, and share your files securely. Login to get started.
+<style>
+    :root {
+        --hero-gradient: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+    }
+
+    .landing-container {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .hero-section {
+        text-align: center;
+        padding: 6rem 2rem;
+        background: radial-gradient(circle at center, var(--bg-secondary) 0%, var(--bg) 100%);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .lowercase-text {
+        text-transform: lowercase;
+    }
+
+    .hero-title {
+        font-size: 3.5rem;
+        font-weight: 900;
+        margin-bottom: 1.5rem;
+        background: var(--hero-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.05em;
+    }
+
+    .hero-subtitle {
+        font-size: 1.25rem;
+        color: var(--muted-text);
+        max-width: 600px;
+        margin: 0 auto 2.5rem;
+        line-height: 1.6;
+    }
+
+    .cta-group {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+    }
+
+    .btn-hero {
+        padding: 0.875rem 2rem;
+        border-radius: 50px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: transform 0.2s;
+    }
+
+    .btn-primary-hero {
+        background: var(--primary);
+        color: white;
+        box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+    }
+
+    .btn-secondary-hero {
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+
+    .btn-hero:hover {
+        transform: translateY(-2px);
+    }
+
+    .section-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 5rem 2rem;
+    }
+
+    .section-header {
+        text-align: center;
+        margin-bottom: 4rem;
+    }
+
+    .section-title {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        color: var(--text);
+    }
+
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+    }
+
+    .feature-card {
+        background: var(--card);
+        padding: 2rem;
+        border-radius: 1rem;
+        border: 1px solid var(--border);
+        transition: border-color 0.3s;
+    }
+
+    .feature-card:hover {
+        border-color: var(--primary);
+    }
+
+    .feature-icon {
+        width: 50px;
+        height: 50px;
+        background: rgba(79, 70, 229, 0.1);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: var(--primary);
+        margin-bottom: 1.5rem;
+    }
+
+    .feature-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 0.75rem;
+    }
+
+    .feature-desc {
+        color: var(--muted-text);
+        line-height: 1.6;
+        font-size: 0.95rem;
+    }
+
+    .privacy-security-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3rem;
+        margin-top: 2rem;
+    }
+
+    .info-box {
+        background: var(--card);
+        padding: 2.5rem;
+        border-radius: 1rem;
+        border: 1px solid var(--border);
+    }
+
+    .info-list {
+        list-style: none;
+        padding: 0;
+        margin-top: 1.5rem;
+    }
+
+    .info-list li {
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--muted-text);
+    }
+
+    .info-list i {
+        color: #10b981;
+    }
+
+    .faq-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    details {
+        background: var(--card);
+        margin-bottom: 1rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+
+    summary {
+        padding: 1.25rem;
+        cursor: pointer;
+        font-weight: 600;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    summary::-webkit-details-marker {
+        display: none;
+    }
+
+    summary::after {
+        content: '+';
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--muted-text);
+    }
+
+    details[open] summary::after {
+        content: '-';
+    }
+
+    .faq-answer {
+        padding: 0 1.25rem 1.25rem;
+        color: var(--muted-text);
+        line-height: 1.6;
+        border-top: 1px solid var(--border);
+        margin-top: 0;
+        padding-top: 1rem;
+    }
+
+    @media (max-width: 768px) {
+        .hero-title { font-size: 2.5rem; }
+        .privacy-security-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<main class="landing-container lowercase-text">
+    
+    <!-- hero section -->
+    <section class="hero-section">
+        <h1 class="hero-title">w upload</h1>
+        <p class="hero-subtitle">
+            platform berbagi file yang aman, cepat, dan mudah. <br>
+            tanpa ribet, privasi terjaga, kolaborasi tanpa batas.
         </p>
-        <div>
-            <a href="/dashboard" class="nav-item primary" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
-                <i class="fa-solid fa-arrow-right-to-bracket"></i> Go to Dashboard
-            </a>
+        <div class="cta-group">
+            <a href="/dashboard" class="btn-hero btn-primary-hero">buka dashboard</a>
+            <a href="/docs" class="btn-hero btn-secondary-hero">dokumentasi api</a>
         </div>
-    </div>
+    </section>
+
+    <!-- features section -->
+    <section class="section-container">
+        <div class="section-header">
+            <h2 class="section-title">fitur unggulan</h2>
+            <p style="color: var(--muted-text);">semua yang kamu butuhkan untuk manajemen file.</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-cloud-bolt"></i></div>
+                <h3 class="feature-title">upload cepat & chunked</h3>
+                <p class="feature-desc">dukungan upload file besar hingga bergiga-giga dengan sistem pemecahan (chunking) otomatis agar stabil.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                <h3 class="feature-title">keamanan tingkat tinggi</h3>
+                <p class="feature-desc">lindungi file dengan password, hint, enkripsi bcrypt, dan autentikasi 2fa (two-factor authentication).</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-users"></i></div>
+                <h3 class="feature-title">kolaborasi tim</h3>
+                <p class="feature-desc">buat tim, undang teman, dan kelola folder bersama. atur izin akses untuk setiap anggota.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-earth-americas"></i></div>
+                <h3 class="feature-title">kontrol geografis</h3>
+                <p class="feature-desc">fitur geo-fencing memungkinkan kamu membatasi akses download hanya dari lokasi tertentu.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-fire"></i></div>
+                <h3 class="feature-title">burn after read</h3>
+                <p class="feature-desc">mode rahasia dimana file akan otomatis terhapus permanen setelah satu kali didownload.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-code"></i></div>
+                <h3 class="feature-title">api developer</h3>
+                <p class="feature-desc">integrasikan sistem kami ke aplikasimu menggunakan api key dan dokumentasi yang lengkap.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- privacy & security detail -->
+    <section class="section-container" style="background: var(--bg-secondary);">
+        <div class="section-header">
+            <h2 class="section-title">privasi & keamanan</h2>
+            <p style="color: var(--muted-text);">data kamu adalah prioritas utama kami.</p>
+        </div>
+
+        <div class="privacy-security-grid">
+            <div class="info-box">
+                <h3 class="feature-title" style="margin-bottom: 1rem;"><i class="fa-solid fa-user-shield"></i> kebijakan privasi</h3>
+                <p style="color: var(--text); line-height: 1.6;">
+                    kami tidak menjual data kamu ke pihak ketiga. file yang kamu upload sepenuhnya milikmu. kami hanya menyimpan log akses dasar untuk keperluan keamanan dan audit sistem.
+                </p>
+                <ul class="info-list">
+                    <li><i class="fa-solid fa-check"></i> tidak ada pelacakan iklan tersembunyi.</li>
+                    <li><i class="fa-solid fa-check"></i> data profil publik opsional.</li>
+                    <li><i class="fa-solid fa-check"></i> hak penuh untuk menghapus data.</li>
+                    <li><i class="fa-solid fa-check"></i> transparansi penggunaan penyimpanan.</li>
+                </ul>
+            </div>
+
+            <div class="info-box">
+                <h3 class="feature-title" style="margin-bottom: 1rem;"><i class="fa-solid fa-lock"></i> infrastruktur keamanan</h3>
+                <p style="color: var(--text); line-height: 1.6;">
+                    sistem kami dibangun dengan standar keamanan modern untuk mencegah akses tidak sah dan serangan siber.
+                </p>
+                <ul class="info-list">
+                    <li><i class="fa-solid fa-check"></i> proteksi brute-force & rate limiting.</li>
+                    <li><i class="fa-solid fa-check"></i> deteksi login mencurigakan & manajemen sesi.</li>
+                    <li><i class="fa-solid fa-check"></i> sanitasi input untuk mencegah xss/injection.</li>
+                    <li><i class="fa-solid fa-check"></i> pemantauan server real-time oleh admin.</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- faq section -->
+    <section class="section-container">
+        <div class="section-header">
+            <h2 class="section-title">pertanyaan umum (faq)</h2>
+            <p style="color: var(--muted-text);">jawaban untuk hal yang sering ditanyakan.</p>
+        </div>
+
+        <div class="faq-container">
+            <details>
+                <summary>apakah layanan ini gratis?</summary>
+                <div class="faq-answer">
+                    ya, kami menyediakan paket gratis dengan kuota penyimpanan yang cukup lega. kamu bisa upgrade ke pro untuk penyimpanan lebih besar dan bandwidth prioritas.
+                </div>
+            </details>
+
+            <details>
+                <summary>berapa lama file saya disimpan?</summary>
+                <div class="faq-answer">
+                    file akan disimpan selamanya selama akun kamu aktif dan tidak melanggar ketentuan layanan. kamu juga bisa mengatur timer kadaluarsa otomatis untuk file tertentu.
+                </div>
+            </details>
+
+            <details>
+                <summary>apa itu fitur 'file request'?</summary>
+                <div class="faq-answer">
+                    fitur ini memungkinkan kamu membuat link khusus. orang lain bisa menggunakan link tersebut untuk mengupload file langsung ke folder akun kamu tanpa mereka perlu login.
+                </div>
+            </details>
+
+            <details>
+                <summary>bagaimana cara kerja 2fa?</summary>
+                <div class="faq-answer">
+                    two-factor authentication (2fa) menambah lapisan keamanan. setelah mengaktifkannya di profil, kamu perlu memasukkan kode dari aplikasi google authenticator setiap kali login.
+                </div>
+            </details>
+
+            <details>
+                <summary>apakah saya bisa mengundang teman?</summary>
+                <div class="faq-answer">
+                    tentu! gunakan sistem referral di profil kamu. setiap teman yang mendaftar menggunakan kodemu akan memberikan tambahan kuota penyimpanan untukmu.
+                </div>
+            </details>
+        </div>
+    </section>
+
+    <!-- final cta -->
+    <section class="hero-section" style="border-top: 1px solid var(--border); border-bottom: none;">
+        <h2 class="section-title">siap untuk memulai?</h2>
+        <p class="hero-subtitle" style="margin-bottom: 2rem;">gabung sekarang dan nikmati kemudahan berbagi file.</p>
+        <a href="/register" class="btn-hero btn-primary-hero">daftar akun gratis</a>
+    </section>
+
 </main>
 
 <%- include('partials/footer') %>
