@@ -1,0 +1,117 @@
+<%- include('partials/header', { title: 'Admin Panel', pageCss: 'dashboard' }) %>
+
+<div class="dashboard-layout">
+    <main class="main-content" style="padding: 2rem;">
+        <div class="admin-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
+            <h1><i class="fa-solid fa-shield-cat"></i> Admin Dashboard</h1>
+            <a href="/dashboard" class="btn secondary-btn">Back to App</a>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem; margin-bottom:2rem;">
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Total Users</h3>
+                <p style="font-size:2rem; font-weight:bold;"><%= userCount %></p>
+            </div>
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Total Files</h3>
+                <p style="font-size:2rem; font-weight:bold;"><%= fileCount %></p>
+            </div>
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Storage Used</h3>
+                <p style="font-size:2rem; font-weight:bold;"><%= (totalSize / 1024 / 1024 / 1024).toFixed(2) %> GB</p>
+            </div>
+        </div>
+
+        <div class="admin-grid" style="display:grid; grid-template-columns: 2fr 1fr; gap:2rem;">
+            
+            <!-- User Management -->
+            <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>User Management</h3>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; margin-top:1rem;">
+                        <thead>
+                            <tr style="text-align:left; border-bottom:2px solid var(--border);">
+                                <th style="padding:0.5rem;">User</th>
+                                <th style="padding:0.5rem;">Role</th>
+                                <th style="padding:0.5rem;">Status</th>
+                                <th style="padding:0.5rem;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% users.forEach(u => { %>
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:0.8rem 0.5rem;">
+                                        <strong><%= u.username %></strong><br>
+                                        <small><%= u.email || 'No Email' %></small>
+                                    </td>
+                                    <td style="padding:0.5rem;"><span class="badge"><%= u.role %></span></td>
+                                    <td style="padding:0.5rem;">
+                                        <% if(u.isBanned) { %> <span style="color:red; font-weight:bold;">BANNED</span> <% } else { %> Active <% } %>
+                                        <% if(u.plan === 'pro') { %> <span style="color:gold; font-weight:bold;">PRO</span> <% } %>
+                                    </td>
+                                    <td style="padding:0.5rem;">
+                                        <div style="display:flex; gap:0.5rem;">
+                                            <a href="/admin/impersonate/<%= u._id %>" class="btn secondary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;" title="Login as User"><i class="fa-solid fa-mask"></i></a>
+                                            
+                                            <% if(!u.isBanned) { %>
+                                                <form action="/admin/users/<%= u._id %>/update" method="POST" onsubmit="return confirm('Ban user?');">
+                                                    <input type="hidden" name="action" value="ban">
+                                                    <button class="btn danger-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;"><i class="fa-solid fa-ban"></i></button>
+                                                </form>
+                                            <% } else { %>
+                                                <form action="/admin/users/<%= u._id %>/update" method="POST">
+                                                    <input type="hidden" name="action" value="unban">
+                                                    <button class="btn primary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;"><i class="fa-solid fa-unlock"></i></button>
+                                                </form>
+                                            <% } %>
+
+                                            <% if(!u.isVerified) { %>
+                                                <form action="/admin/users/<%= u._id %>/update" method="POST">
+                                                    <input type="hidden" name="action" value="verify">
+                                                    <button class="btn secondary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem; color:#2563eb;"><i class="fa-solid fa-check-circle"></i></button>
+                                                </form>
+                                            <% } %>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- System Configuration -->
+            <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>System Config</h3>
+                <form action="/admin/config" method="POST" style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem;">
+                    
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                        <label>Maintenance Mode</label>
+                        <input type="checkbox" name="maintenanceMode" <%= config.maintenanceMode ? 'checked' : '' %>>
+                    </div>
+
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                        <label>Enable Ads</label>
+                        <input type="checkbox" name="adsEnabled" <%= config.adsEnabled ? 'checked' : '' %>>
+                    </div>
+
+                    <div>
+                        <label style="display:block; margin-bottom:0.5rem;">Global Announcement</label>
+                        <input type="text" name="globalAnnouncement" class="full-input" value="<%= config.globalAnnouncement %>" placeholder="Message for all users...">
+                    </div>
+
+                    <div>
+                        <label style="display:block; margin-bottom:0.5rem;">Ad Script (HTML)</label>
+                        <textarea name="adScript" class="full-input" rows="4"><%= config.adScript %></textarea>
+                    </div>
+
+                    <button type="submit" class="btn primary-btn">Save Settings</button>
+                </form>
+            </section>
+
+        </div>
+    </main>
+</div>
+
+<%- include('partials/footer') %>

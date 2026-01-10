@@ -61,28 +61,8 @@
                             </div>
                         </div>
                     </section>
+
                 </div>
-<div class="stats-row" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
-        <span class="stat-label">Storage Usage</span>
-        <span class="stat-value">
-            <%= ((user.storageUsed || 0) / 1024 / 1024).toFixed(2) %> MB / 
-            <%= ((user.storageLimit + user.storageBonus) / 1024 / 1024).toFixed(2) %> MB
-        </span>
-    </div>
-    <div class="progress-bar" style="height:10px; background:var(--bg-secondary); border-radius:5px; overflow:hidden;">
-        <% const percent = Math.min(100, ((user.storageUsed || 0) / (user.storageLimit + user.storageBonus)) * 100); %>
-        <div class="fill" style="width:<%= percent %>%; background:<%= percent > 90 ? 'red' : 'var(--primary)' %>; height:100%;"></div>
-    </div>
-    
-    <% if(user.plan === 'free') { %>
-        <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem; background: linear-gradient(45deg, #f59e0b, #d97706);">
-            <i class="fa-solid fa-crown"></i> Upgrade to PRO
-        </button>
-    <% } else { %>
-        <p style="margin-top:1rem; color:green; text-align:center;"><i class="fa-solid fa-check-circle"></i> PRO Plan Active</p>
-    <% } %>
-</div>
 
                 <!-- RIGHT COLUMN -->
                 <div class="settings-col">
@@ -310,12 +290,5 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 });
 </script>
-<script>
-    document.getElementById('upgradeBtn')?.addEventListener('click', async () => {
-        if(!confirm('Upgrade to Pro for $5/month? (Simulation)')) return;
-        const res = await fetch('/billing/upgrade', { method: 'POST' });
-        const data = await res.json();
-        if(res.ok) { showToast(data.message, 'success'); setTimeout(() => location.reload(), 1000); }
-    });
-</script>
+
 <%- include('partials/footer') %>

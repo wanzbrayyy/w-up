@@ -8,6 +8,8 @@ const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const archiver = require('archiver'); // Wajib install: npm install archiver
+const { v4: uuidv4 } = require('uuid'); // Wajib install: npm install uuid
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
@@ -23,13 +25,13 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, htmlContent) {
     try {
         const mailOptions = {
             from: `"w upload" <${process.env.EMAIL_USER}>`,
             to: to,
             subject: subject,
-            html: text
+            html: htmlContent
         };
         await transporter.sendMail(mailOptions);
         console.log(`Email sent successfully to: ${to}`);
@@ -40,6 +42,7 @@ async function sendEmail(to, subject, text) {
     }
 }
 
+// --- Folder Management ---
 router.post('/folder', auth.protectApi, async (req, res) => {
     try {
         const { name, parentId } = req.body;
@@ -60,6 +63,7 @@ router.post('/folder', auth.protectApi, async (req, res) => {
     }
 });
 
+// --- Upload Logic ---
 router.post('/upload', async (req, res) => {
     try {
         let user = null;
@@ -217,6 +221,7 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
     res.status(201).json({ message: 'File assembled successfully' });
 });
 
+// --- File Actions ---
 router.put('/files/:id/rename', auth.protectApi, async (req, res) => {
     try {
         await File.findOneAndUpdate({ _id: req.params.id, owner: req.user.id }, { originalName: req.body.newName });
@@ -284,6 +289,7 @@ router.delete('/trash/empty', auth.protectApi, async (req, res) => {
     res.json({ message: 'Trash emptied' });
 });
 
+// --- Collaboration & Sharing ---
 router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
     const { username } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
@@ -296,7 +302,17 @@ router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
         file.collaborators.push(collabUser._id);
         await file.save();
     }
-    res.json({ message: 'Collaborator added' });
+    
+    // Kirim notifikasi email ke collaborator
+    if (collabUser.email) {
+        const link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; // Direct ke folder
+        const html = `<h3>You've been invited to collaborate!</h3>
+                      <p>${req.user.username} has added you to the folder/file: <b>${file.originalName}</b></p>
+                      <p><a href="${link}">Open Folder</a></p>`;
+        await sendEmail(collabUser.email, `Collaboration Invite: ${file.originalName}`, html);
+    }
+
+    res.json({ message: 'Collaborator added and notified' });
 });
 
 router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
@@ -304,11 +320,109 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
     if (!file) return res.status(404).json({ message: 'File not found' });
     
-    const link = `${req.protocol}://${req.get('host')}/w-upload/file/${file.customAlias}`;
-    await sendEmail(email, `${req.user.username} shared a file`, `Download here: ${link}`);
-    res.json({ message: 'Email sent' });
+    // Cek jika email terdaftar sebagai user, jadikan collaborator otomatis
+    const existingUser = await User.findOne({ email });
+    if (existingUser && !file.collaborators.includes(existingUser._id)) {
+        file.collaborators.push(existingUser._id);
+        await file.save();
+    }
+
+    let link;
+    if (file.isFolder) {
+        // Jika folder, arahkan ke dashboard dengan folderId atau route view khusus
+        // Disini kita arahkan ke dashboard jika user login, atau public link jika ada
+        link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; 
+    } else {
+        link = `${req.protocol}://${req.get('host')}/w-upload/file/${file.customAlias}`;
+    }
+
+    const htmlContent = `
+        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+            <h2 style="color: #4f46e5;">File Shared with You</h2>
+            <p><strong>${req.user.username}</strong> has shared a ${file.isFolder ? 'folder' : 'file'} with you.</p>
+            <div style="margin: 20px 0; padding: 15px; background: #f9fafb; border-radius: 5px;">
+                <p style="margin: 0; font-weight: bold;">${file.originalName}</p>
+                <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">Size: ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+            </div>
+            <a href="${link}" style="display: inline-block; background: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Open ${file.isFolder ? 'Folder' : 'File'}</a>
+            <p style="font-size: 0.8em; color: #888; margin-top: 20px;">If the button doesn't work, copy this link: <br>${link}</p>
+        </div>
+    `;
+
+    await sendEmail(email, `${req.user.username} shared "${file.originalName}"`, htmlContent);
+    res.json({ message: 'Email sent successfully' });
 });
 
+// --- ZIP Download (Single Folder & Bulk) ---
+
+// 1. Download Specific Folder as ZIP
+router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
+    try {
+        const folderId = req.params.id;
+        const folder = await File.findOne({ 
+            _id: folderId, 
+            $or: [{ owner: req.user.id }, { collaborators: req.user.id }] 
+        });
+
+        if (!folder || !folder.isFolder) return res.status(404).send('Folder not found or access denied');
+
+        // Cari semua file di dalam folder (Hanya level 1 untuk performa, atau rekursif jika perlu)
+        // Untuk base64 storage, rekursif sangat berat. Kita ambil direct children dulu.
+        const files = await File.find({ parentId: folderId, isFolder: false, deletedAt: null });
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        res.attachment(`${folder.originalName}.zip`);
+        archive.pipe(res);
+
+        for (const file of files) {
+            // Convert Base64 string back to Buffer
+            if (file.base64) {
+                const base64Data = file.base64.split(';base64,').pop();
+                const buffer = Buffer.from(base64Data, 'base64');
+                archive.append(buffer, { name: file.originalName });
+            }
+        }
+
+        await archive.finalize();
+    } catch (e) {
+        console.error(e);
+        res.status(500).send('Error creating zip');
+    }
+});
+
+// 2. Bulk Download as ZIP (Selected Files)
+router.post('/files/zip', auth.protectApi, async (req, res) => {
+    try {
+        const { fileIds } = req.body;
+        if (!fileIds || !Array.isArray(fileIds)) return res.status(400).send('Invalid files');
+
+        const files = await File.find({ 
+            _id: { $in: fileIds }, 
+            $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
+            isFolder: false // Skip folder nested untuk bulk zip sementara demi performa
+        });
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        res.attachment('files.zip');
+        archive.pipe(res);
+
+        for (const file of files) {
+            if (file.base64) {
+                const base64Data = file.base64.split(';base64,').pop();
+                const buffer = Buffer.from(base64Data, 'base64');
+                archive.append(buffer, { name: file.originalName });
+            }
+        }
+
+        await archive.finalize();
+    } catch (e) {
+        res.status(500).send('Error generating zip');
+    }
+});
+
+// --- Comments & Reactions ---
 router.post('/files/:alias/comment', auth.protectApi, async (req, res) => {
     const { text } = req.body;
     const file = await File.findOne({ customAlias: req.params.alias });
@@ -335,6 +449,7 @@ router.post('/files/:alias/react', auth.protectApi, async (req, res) => {
     res.json({ message: 'Reaction updated', counts: { like: file.reactions.like.length, love: file.reactions.love.length } });
 });
 
+// --- Team Management ---
 router.post('/teams', auth.protectApi, async (req, res) => {
     const { name } = req.body;
     const team = new Team({ name, owner: req.user.id, members: [req.user.id] });
@@ -400,6 +515,7 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
     res.json({ message: `Request ${status}` });
 });
 
+// --- Profile & Security ---
 router.put('/profile/settings', auth.protectApi, async (req, res) => {
     const { isPublicProfile, publicBio } = req.body;
     req.user.isPublicProfile = isPublicProfile;
@@ -441,6 +557,28 @@ router.post('/profile/api-key', auth.protectApi, async (req, res) => {
     res.status(201).json({ message: 'API Key generated.', key });
 });
 
+router.get('/profile/devices', auth.protectApi, async (req, res) => {
+    const user = await User.findById(req.user.id);
+    res.json({ sessions: user.sessions });
+});
+
+router.delete('/profile/devices/:deviceId', auth.protectApi, async (req, res) => {
+    await User.updateOne(
+        { _id: req.user.id },
+        { $pull: { sessions: { deviceId: req.params.deviceId } } }
+    );
+    res.json({ message: 'Device logged out.' });
+});
+
+router.delete('/profile/devices', auth.protectApi, async (req, res) => {
+    const currentToken = req.cookies.refresh_token; 
+    await User.updateOne(
+        { _id: req.user.id },
+        { $pull: { sessions: { refreshToken: { $ne: currentToken } } } }
+    );
+    res.json({ message: 'All other devices logged out.' });
+});
+
 router.post('/report/:identifier', async (req, res) => {
     const { reason, category } = req.body;
     const file = await File.findOne({ customAlias: req.params.identifier });
@@ -448,10 +586,6 @@ router.post('/report/:identifier', async (req, res) => {
     file.reports.push({ reason: category ? `${category}: ${reason}` : reason });
     await file.save();
     res.status(200).json({ message: 'Report submitted.' });
-});
-
-router.post('/files/zip', auth.protectApi, async (req, res) => {
-    res.status(501).json({ message: 'Zip compression requires streaming implementation.' });
 });
 
 module.exports = router;

@@ -4,25 +4,47 @@ const bcrypt = require('bcryptjs');
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true },
-  email: { type: String, trim: true }, 
+  email: { type: String, trim: true },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  isBanned: { type: Boolean, default: false },
+  banReason: { type: String },
+  isVerified: { type: Boolean, default: false }, 
+  plan: { type: String, enum: ['free', 'pro'], default: 'free' },
+  subscriptionExpiresAt: { type: Date },
+  storageLimit: { type: Number, default: 1073741824 }, 
+  storageUsed: { type: Number, default: 0 }, 
+  bandwidthLimit: { type: Number, default: 0 }, 
+  walletBalance: { type: Number, default: 0 },
+  referralCode: { type: String, unique: true },
+  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  referralCount: { type: Number, default: 0 },
+  storageBonus: { type: Number, default: 0 },
+  passwordChangedAt: { type: Date, default: Date.now },
+  loginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date },
   isTwoFactorEnabled: { type: Boolean, default: false },
   twoFactorSecret: { ascii: String, otpauth_url: String },
   apiKeys: [{ key: String, label: String, createdAt: { type: Date, default: Date.now } }],
-  
-  referralCode: { type: String, unique: true },
-  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  storageBonus: { type: Number, default: 0 }, 
-  
   isPublicProfile: { type: Boolean, default: false },
   publicBio: { type: String, default: '' },
-  
   teams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
-  
+ 
+  sessions: [{
+    refreshToken: String, deviceId: String, ip: String,
+    os: String, browser: String, location: String,
+    lastActive: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now }
+  }],
+
   loginHistory: [{
-    ip: String,
-    userAgent: String,
+    ip: String, os: String, browser: String, location: String,
     date: { type: Date, default: Date.now }
   }],
+
+  failedLogins: [{
+    ip: String, reason: String, date: { type: Date, default: Date.now }
+  }],
+
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -33,6 +55,7 @@ UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  this.passwordChangedAt = Date.now();
   next();
 });
 

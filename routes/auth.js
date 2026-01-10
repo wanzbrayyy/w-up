@@ -1,61 +1,124 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const geoip = require('geoip-lite');
+const useragent = require('useragent');
 const User = require('../models/user');
+const { loginLimiter, registerLimiter } = require('../middleware/limiters');
 const router = express.Router();
 
-router.post('/register', async (req, res) => {
+const PASS_EXPIRY_DAYS = 90;
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCK_TIME = 15 * 60 * 1000; 
+
+router.post('/register', registerLimiter, async (req, res) => {
     try {
         const { username, password, referralCode } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Username and password are required.' });
-        }
+        if (!username || !password) return res.status(400).json({ message: 'Required fields missing.' });
+        
         const existingUser = await User.findOne({ username });
-        if (existingUser) {
-            return res.status(400).json({ message: 'Username already exists.' });
-        }
+        if (existingUser) return res.status(400).json({ message: 'Username exists.' });
 
         let referrer = null;
-        let bonus = 0;
         if (referralCode) {
             referrer = await User.findOne({ referralCode });
             if (referrer) {
-                referrer.storageBonus += 52428800; // +50MB for referrer
+                referrer.storageBonus += 52428800;
                 await referrer.save();
-                bonus = 52428800; // +50MB for new user
             }
         }
 
-        const user = new User({ username, password, referredBy: referrer?._id, storageBonus: bonus });
+        const user = new User({ 
+            username, 
+            password, 
+            referredBy: referrer?._id, 
+            storageBonus: referrer ? 52428800 : 0 
+        });
         await user.save();
-        res.status(201).json({ message: 'User registered successfully.' });
+        res.status(201).json({ message: 'User registered.' });
     } catch (error) {
-        res.status(500).json({ message: 'Server error during registration.' });
+        res.status(500).json({ message: 'Registration failed.' });
     }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username });
-        if (!user || !(await user.comparePassword(password))) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
+        const ip = req.ip || req.connection.remoteAddress;
+        
+        if (!user) return res.status(401).json({ message: 'Invalid credentials.' });
+
+        if (user.lockUntil && user.lockUntil > Date.now()) {
+            return res.status(423).json({ 
+                message: `Account locked. Try again after ${new Date(user.lockUntil).toLocaleTimeString()}` 
+            });
         }
 
-        user.loginHistory.push({ ip: req.ip, userAgent: req.headers['user-agent'] });
-        if (user.loginHistory.length > 10) user.loginHistory.shift();
-        await user.save();
+        const isMatch = await user.comparePassword(password);
+        if (!isMatch) {
+            user.loginAttempts += 1;
+            user.failedLogins.push({ ip, reason: 'Wrong Password' });
+            
+            if (user.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                user.lockUntil = Date.now() + LOCK_TIME;
+                user.failedLogins.push({ ip, reason: 'Account Locked' });
+            }
+            await user.save();
+            return res.status(401).json({ 
+                message: user.lockUntil ? 'Account locked due to too many failed attempts.' : 'Invalid credentials.' 
+            });
+        }
+
+        const daysSinceChange = (Date.now() - new Date(user.passwordChangedAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceChange > PASS_EXPIRY_DAYS) {
+            return res.status(403).json({ status: 'password_expired', message: 'Password expired. Please change it.' });
+        }
+
+        user.loginAttempts = 0;
+        user.lockUntil = undefined;
 
         if (user.isTwoFactorEnabled) {
             const tempToken = jwt.sign({ id: user._id, partial: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
             res.cookie('temp_token', tempToken, { httpOnly: true });
-            return res.status(200).json({ status: '2fa_required', message: '2FA code required.' });
+            await user.save();
+            return res.status(200).json({ status: '2fa_required', message: '2FA required.' });
         }
 
-        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.cookie('token', token, { httpOnly: true, maxAge: 86400000 });
-        res.status(200).json({ message: 'Logged in successfully.' });
+        const agent = useragent.parse(req.headers['user-agent']);
+        const geo = geoip.lookup(ip);
+        const location = geo ? `${geo.city}, ${geo.country}` : 'Unknown';
+        const deviceId = crypto.randomBytes(16).toString('hex');
+        
+        const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
+        const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+        user.sessions.push({
+            refreshToken,
+            deviceId,
+            ip,
+            os: agent.os.toString(),
+            browser: agent.toAgent(),
+            location
+        });
+
+        user.loginHistory.push({
+            ip,
+            os: agent.os.toString(),
+            browser: agent.toAgent(),
+            location
+        });
+        
+        if (user.loginHistory.length > 20) user.loginHistory.shift();
+
+        await user.save();
+
+        res.cookie('token', accessToken, { httpOnly: true, maxAge: 900000 });
+        res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
+        
+        res.status(200).json({ message: 'Login successful.' });
     } catch (error) {
-        res.status(500).json({ message: 'Server error during login.' });
+        res.status(500).json({ message: 'Login error.' });
     }
 });
 
@@ -76,9 +139,25 @@ router.post('/login/2fa', async (req, res) => {
         });
 
         if(verified) {
-            const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
+            const agent = useragent.parse(req.headers['user-agent']);
+            const deviceId = crypto.randomBytes(16).toString('hex');
+            
+            const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
+            const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+            
+            user.sessions.push({
+                refreshToken,
+                deviceId,
+                ip: req.ip || req.connection.remoteAddress,
+                os: agent.os.toString(),
+                browser: agent.toAgent(),
+                location: 'Unknown (2FA)'
+            });
+            await user.save();
+
             res.clearCookie('temp_token');
-            res.cookie('token', token, { httpOnly: true, maxAge: 86400000 });
+            res.cookie('token', token, { httpOnly: true, maxAge: 900000 });
+            res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
             res.json({ message: 'Login successful' });
         } else {
             res.status(400).json({ message: 'Invalid 2FA code' });
@@ -88,8 +167,49 @@ router.post('/login/2fa', async (req, res) => {
     }
 });
 
-router.get('/logout', (req, res) => {
-    res.cookie('token', '', { expires: new Date(0) });
+router.post('/refresh-token', async (req, res) => {
+    try {
+        const oldRefreshToken = req.cookies.refresh_token;
+        if (!oldRefreshToken) return res.status(401).json({ message: 'No refresh token.' });
+
+        const decoded = jwt.verify(oldRefreshToken, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.id);
+        if (!user) return res.status(403).json({ message: 'User not found.' });
+
+        const sessionIndex = user.sessions.findIndex(s => s.refreshToken === oldRefreshToken);
+        if (sessionIndex === -1) {
+            res.clearCookie('token');
+            res.clearCookie('refresh_token');
+            return res.status(403).json({ message: 'Invalid session.' });
+        }
+
+        const newAccessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
+        const newRefreshToken = jwt.sign({ id: user._id, deviceId: decoded.deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+        user.sessions[sessionIndex].refreshToken = newRefreshToken;
+        user.sessions[sessionIndex].lastActive = Date.now();
+        await user.save();
+
+        res.cookie('token', newAccessToken, { httpOnly: true, maxAge: 900000 });
+        res.cookie('refresh_token', newRefreshToken, { httpOnly: true, maxAge: 604800000 });
+
+        res.json({ message: 'Token refreshed.' });
+    } catch (error) {
+        res.status(403).json({ message: 'Invalid refresh token.' });
+    }
+});
+
+router.get('/logout', async (req, res) => {
+    const refreshToken = req.cookies.refresh_token;
+    if (refreshToken) {
+        try {
+            const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+            await User.updateOne({ _id: decoded.id }, { $pull: { sessions: { refreshToken } } });
+        } catch(e) {}
+    }
+    res.clearCookie('token');
+    res.clearCookie('refresh_token');
+    res.clearCookie('temp_token');
     res.redirect('/login');
 });
 

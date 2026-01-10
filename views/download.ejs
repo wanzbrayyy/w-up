@@ -3,8 +3,14 @@
 <main class="download-page-container">
     <div class="download-card">
         <div class="file-icon-wrapper">
-            <% if (file.contentType.startsWith('image/')) { %>
+            <% if (file.isFolder) { %>
+                <i class="fa-solid fa-folder-open file-icon" style="color: #fbbf24;"></i>
+            <% } else if (file.contentType.startsWith('image/')) { %>
                 <i class="fa-solid fa-image file-icon"></i>
+            <% } else if (file.contentType.startsWith('video/')) { %>
+                <i class="fa-solid fa-video file-icon"></i>
+            <% } else if (file.contentType.startsWith('audio/')) { %>
+                <i class="fa-solid fa-music file-icon"></i>
             <% } else { %>
                 <i class="fa-solid fa-file-arrow-down file-icon"></i>
             <% } %>
@@ -12,32 +18,52 @@
         
         <h1 class="filename"><%= file.originalName %></h1>
         <div class="file-meta">
-            Size: <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; 
+            <% if (file.isFolder) { %>
+                Type: Folder Archive &bull; 
+            <% } else { %>
+                Size: <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; 
+            <% } %>
             Uploaded: <%= new Date(file.createdAt).toLocaleDateString() %> &bull;
             Downloads: <%= file.downloads %>
-            <% if(file.lastDownloadedAt) { %> &bull; Last: <%= new Date(file.lastDownloadedAt).toLocaleDateString() %> <% } %>
         </div>
 
-        <div class="preview-area" id="previewArea"></div>
+        <div class="preview-area" style="display: block; margin-bottom: 2rem;">
+            <% if (!file.isFolder) { %>
+                <% if (file.contentType.startsWith('image/')) { %>
+                    <img src="<%= downloadLink %>" alt="Preview" class="preview-content" style="max-width: 100%; border-radius: 8px;">
+                <% } else if (file.contentType.startsWith('video/')) { %>
+                    <video controls class="preview-content" style="max-width: 100%; border-radius: 8px;">
+                        <source src="<%= downloadLink %>" type="<%= file.contentType %>">
+                        Your browser does not support the video tag.
+                    </video>
+                <% } else if (file.contentType.startsWith('audio/')) { %>
+                    <audio controls class="preview-content" style="width: 100%; margin-top: 1rem;">
+                        <source src="<%= downloadLink %>" type="<%= file.contentType %>">
+                        Your browser does not support the audio element.
+                    </audio>
+                <% } %>
+            <% } %>
+        </div>
 
         <% if (file.isBurnAfterRead) { %>
             <div class="alert-box warning"><i class="fa-solid fa-fire"></i> This file will self-destruct after you download it!</div>
         <% } %>
 
-        <a href="<%= downloadLink %>" class="btn-download" id="downloadLinkBtn" download>
-            <i class="fa-solid fa-download"></i> Download File
+        <a href="<%= downloadLink %>" class="btn-download" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
+            <% if (file.isFolder) { %>
+                <i class="fa-solid fa-file-zipper"></i> Download Folder as ZIP
+            <% } else { %>
+                <i class="fa-solid fa-download"></i> Download File
+            <% } %>
         </a>
 
-        <!-- Social Share -->
         <div class="share-buttons">
             <span>Share:</span>
             <a href="https://wa.me/?text=Download <%= file.originalName %> here: <%= downloadLink %>" target="_blank" class="share-btn whatsapp"><i class="fa-brands fa-whatsapp"></i></a>
             <a href="https://twitter.com/intent/tweet?text=Check out this file&url=<%= downloadLink %>" target="_blank" class="share-btn twitter"><i class="fa-brands fa-twitter"></i></a>
-            <a href="mailto:?subject=File Share&body=Download link: <%= downloadLink %>" class="share-btn email"><i class="fa-solid fa-envelope"></i></a>
             <button onclick="navigator.clipboard.writeText(window.location.href); showToast('Link copied!')" class="share-btn copy"><i class="fa-solid fa-link"></i></button>
         </div>
 
-        <!-- Reactions -->
         <div class="reactions">
             <button class="react-btn" onclick="react('like')">
                 <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount"><%= file.reactions?.like?.length || 0 %></span>
@@ -52,17 +78,20 @@
         </div>
     </div>
 
-    <!-- Comments Section -->
     <div class="comments-section">
         <h3>Comments</h3>
         <div class="comment-list" id="commentList">
-            <% file.comments.forEach(c => { %>
-                <div class="comment">
-                    <strong><%= c.username %></strong>
-                    <p><%= c.text %></p>
-                    <small><%= new Date(c.createdAt).toLocaleDateString() %></small>
-                </div>
-            <% }) %>
+            <% if(file.comments && file.comments.length > 0) { %>
+                <% file.comments.forEach(c => { %>
+                    <div class="comment">
+                        <strong><%= c.username %></strong>
+                        <p><%= c.text %></p>
+                        <small><%= new Date(c.createdAt).toLocaleDateString() %></small>
+                    </div>
+                <% }) %>
+            <% } else { %>
+                <p style="color: var(--muted-text); text-align: center;">No comments yet.</p>
+            <% } %>
         </div>
         <% if (isLoggedIn) { %>
             <form id="commentForm">
@@ -70,12 +99,11 @@
                 <button type="submit">Post</button>
             </form>
         <% } else { %>
-            <p><a href="/login">Login</a> to comment.</p>
+            <p style="text-align:center;"><a href="/login">Login</a> to comment.</p>
         <% } %>
     </div>
 </main>
 
-<!-- Report Modal -->
 <div class="modal-backdrop" id="reportModal">
     <div class="modal-content">
         <div class="modal-header"><h3>Report File</h3><button class="modal-close">&times;</button></div>
@@ -98,33 +126,7 @@
     </div>
 </div>
 
-<style>
-    .share-buttons { display: flex; gap: 10px; align-items: center; justify-content: center; margin: 1.5rem 0; }
-    .share-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-size: 1.1rem; }
-    .share-btn.whatsapp { background: #25D366; } .share-btn.twitter { background: #1DA1F2; } .share-btn.email { background: #ea4335; } .share-btn.copy { background: #555; border:none; cursor:pointer;}
-    
-    .reactions { display: flex; justify-content: center; gap: 15px; margin-bottom: 1rem; }
-    .react-btn { background: var(--bg); border: 1px solid var(--border); padding: 5px 15px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-    .react-btn:hover { background: var(--bg-hover); }
-
-    .comments-section { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
-    .comment { background: var(--card); padding: 1rem; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); }
-    #commentForm { display: flex; gap: 10px; }
-    #commentForm input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid var(--border); }
-    .alert-box { padding: 10px; border-radius: 5px; margin-bottom: 1rem; text-align: center; }
-    .alert-box.warning { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
-</style>
-
 <script>
-    const fileType = "<%= file.contentType %>";
-    const downloadUrl = "<%= downloadLink %>";
-    const previewArea = document.getElementById('previewArea');
-
-    if (fileType.startsWith('image/')) {
-        previewArea.style.display = 'block';
-        previewArea.innerHTML = `<img src="${downloadUrl}" alt="Preview" class="preview-content">`;
-    }
-
     const reportModal = document.getElementById('reportModal');
     document.getElementById('reportBtn').addEventListener('click', () => reportModal.classList.add('active'));
     reportModal.querySelector('.modal-close').addEventListener('click', () => reportModal.classList.remove('active'));

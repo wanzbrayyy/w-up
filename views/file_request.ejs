@@ -1,0 +1,193 @@
+<%- include('partials/header', { title: request.label, pageCss: 'auth' }) %>
+
+<main class="auth-container">
+    <div class="auth-card" style="max-width: 600px; width: 100%;">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="width: 80px; height: 80px; background: rgba(79, 70, 229, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
+                <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary);"></i>
+            </div>
+            <h1 class="auth-title"><%= request.label %></h1>
+            <p class="auth-subtitle">You have been invited to upload files to this location.</p>
+        </div>
+
+        <div class="upload-area" id="dropZone">
+            <input type="file" id="fileInput" multiple hidden>
+            <div class="upload-placeholder">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <p>Drag & Drop files here or <strong>Browse</strong></p>
+            </div>
+        </div>
+
+        <div class="upload-list" id="uploadList"></div>
+    </div>
+</main>
+
+<style>
+    .upload-area {
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        padding: 3rem 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: var(--bg);
+    }
+    .upload-area:hover, .upload-area.drag-over {
+        border-color: var(--primary);
+        background: rgba(79, 70, 229, 0.05);
+    }
+    .upload-placeholder i {
+        font-size: 2rem;
+        color: var(--muted-text);
+        margin-bottom: 1rem;
+    }
+    .upload-placeholder p {
+        color: var(--text);
+        margin: 0;
+    }
+    .upload-placeholder strong {
+        color: var(--primary);
+    }
+    .upload-list {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .upload-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    .item-icon {
+        color: var(--muted-text);
+        font-size: 1.2rem;
+    }
+    .item-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .item-name {
+        font-size: 0.9rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .item-status {
+        font-size: 0.8rem;
+        color: var(--muted-text);
+    }
+    .item-status.success { color: #16a34a; }
+    .item-status.error { color: #dc2626; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadList = document.getElementById('uploadList');
+    const requestSlug = "<%= request.slug %>";
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+        fileInput.value = ''; 
+    });
+
+    function handleFiles(files) {
+        Array.from(files).forEach(uploadFile);
+    }
+
+    function createUploadItem(file) {
+        const item = document.createElement('div');
+        item.className = 'upload-item';
+        item.innerHTML = `
+            <i class="fa-solid fa-spinner fa-spin item-icon"></i>
+            <div class="item-info">
+                <div class="item-name">${file.name}</div>
+                <div class="item-status">Uploading...</div>
+            </div>
+        `;
+        uploadList.prepend(item);
+        return item;
+    }
+
+    function updateItemStatus(item, status, message) {
+        const icon = item.querySelector('.item-icon');
+        const statusText = item.querySelector('.item-status');
+        
+        if (status === 'success') {
+            icon.className = 'fa-solid fa-check-circle item-icon';
+            icon.style.color = '#16a34a';
+            statusText.textContent = 'Uploaded successfully';
+            statusText.classList.add('success');
+        } else {
+            icon.className = 'fa-solid fa-circle-exclamation item-icon';
+            icon.style.color = '#dc2626';
+            statusText.textContent = message || 'Upload failed';
+            statusText.classList.add('error');
+        }
+    }
+
+    function uploadFile(file) {
+        const item = createUploadItem(file);
+        const reader = new FileReader();
+
+        reader.onload = async () => {
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: file.name,
+                        contentType: file.type || 'application/octet-stream',
+                        base64: reader.result,
+                        fileRequestSlug: requestSlug
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    updateItemStatus(item, 'success');
+                } else {
+                    updateItemStatus(item, 'error', data.message);
+                }
+            } catch (error) {
+                updateItemStatus(item, 'error', 'Network error');
+            }
+        };
+
+        reader.onerror = () => {
+            updateItemStatus(item, 'error', 'Error reading file');
+        };
+
+        reader.readAsDataURL(file);
+    }
+});
+</script>
+
+<%- include('partials/footer') %>

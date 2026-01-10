@@ -172,7 +172,6 @@
     </ul>
 </div>
 
-<!-- Modals -->
 <div class="modal" id="shareModal">
     <div class="modal-box" style="max-width: 500px;">
         <h3>Share Settings</h3>
@@ -262,7 +261,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleUpload(files) {
         showToast(`Uploading ${files.length} files...`, 'info');
         for (const file of files) {
-            await uploadStandard(file);
+            if (file.size > 10 * 1024 * 1024) {
+                await uploadChunked(file);
+            } else {
+                await uploadStandard(file);
+            }
         }
         setTimeout(() => location.reload(), 1500);
     }
@@ -281,6 +284,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolve();
             };
         });
+    }
+
+    async function uploadChunked(file) {
+        const CHUNK_SIZE = 1024 * 1024;
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const initRes = await fetch('/api/upload/chunk/init', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ filename: file.name, totalSize: file.size })
+        });
+        const { sessionId } = await initRes.json();
+        
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(file.size, start + CHUNK_SIZE);
+            const chunk = file.slice(start, end);
+            await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.readAsDataURL(chunk);
+                reader.onload = async () => {
+                    await fetch('/api/upload/chunk', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ sessionId, chunkIndex: i, base64Chunk: reader.result })
+                    });
+                    resolve();
+                }
+            });
+        }
+        await fetch('/api/upload/chunk/finalize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ sessionId, parentId: currentFolderId })
+        });
+        showToast('Chunked upload complete', 'success');
     }
 
     const modalTriggers = { 'newFolderBtn': 'folderModal', 'remoteUploadBtn': 'remoteModal', 'fileRequestBtn': 'fileRequestModal', 'cmRename': 'renameModal', 'cmInfo': 'metaModal', 'cmShare': 'shareModal' };
@@ -322,6 +360,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('createFolderBtn').addEventListener('click', async () => {
         await fetch('/api/folder', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: document.getElementById('folderNameInput').value, parentId: currentFolderId }) });
+        location.reload();
+    });
+
+    document.getElementById('startRemoteBtn').addEventListener('click', async () => {
+        await fetch('/api/upload/remote', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url: document.getElementById('remoteUrlInput').value, parentId: currentFolderId }) });
         location.reload();
     });
 

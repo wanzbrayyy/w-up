@@ -18,6 +18,7 @@ router.get('/docs', auth.checkAuthStatus, (req, res) => {
     res.render('docs');
 });
 
+// --- Public Profile ---
 router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
     try {
         const targetUser = await User.findOne({ username: req.params.username, isPublicProfile: true });
@@ -34,13 +35,14 @@ router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
     } catch (e) { res.status(500).render('404'); }
 });
 
-router.get('/req/:slug', async (req, res) => {
+router.get('/req/:slug', auth.checkAuthStatus, async (req, res) => {
     try {
         const request = await FileRequest.findOne({ slug: req.params.slug });
         if (!request) return res.status(404).send('Request not found or expired');
         res.render('file_request', { request });
     } catch (e) { res.status(500).send('Error'); }
 });
+
 
 router.get('/dashboard/teams', auth.protectView, async (req, res) => {
     try {
@@ -49,33 +51,80 @@ router.get('/dashboard/teams', auth.protectView, async (req, res) => {
     } catch (e) { res.status(500).send("Error fetching teams"); }
 });
 
+router.get('/dashboard/affiliate', auth.protectView, async (req, res) => {
+    const referrals = await User.find({ referredBy: req.user.id }).select('username createdAt isVerified plan');
+    res.render('affiliate', { referrals });
+});
+
+router.post('/billing/upgrade', auth.protectView, async (req, res) => {
+    req.user.plan = 'pro';
+    req.user.storageLimit = 50 * 1024 * 1024 * 1024;
+    req.user.subscriptionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); 
+    await req.user.save();
+    res.json({ message: 'Upgraded to PRO successfully!' });
+});
+
 router.get('/dashboard', auth.protectView, async (req, res) => {
     try {
         const { q, sortBy, sortOrder, folderId, type, filter, tag } = req.query;
         let query = {};
+        let currentFolder = null;
+        let breadcrumbs = [];
 
-        if (filter === 'trash') {
-            query = { owner: req.user.id, deletedAt: { $ne: null } };
-        } else if (filter === 'shared') {
-            query = { collaborators: req.user.id, deletedAt: null };
-        } else if (filter === 'starred') {
-            query = { owner: req.user.id, isStarred: true, deletedAt: null };
+        // 1. Logika Folder & Breadcrumbs
+        if (folderId) {
+            // Cek apakah folder ada dan user punya akses (Owner ATAU Collaborator)
+            currentFolder = await File.findOne({ 
+                _id: folderId,
+                $or: [{ owner: req.user.id }, { collaborators: req.user.id }]
+            });
+
+            if (!currentFolder) {
+                return res.status(404).send("Folder not found or access denied.");
+            }
+
+            // PERBAIKAN UTAMA: Jika user punya akses ke folder ini,
+            // dia berhak melihat SEMUA isi folder tersebut (parentId match),
+            // tidak peduli siapa yang upload filenya.
+            query = { parentId: folderId, deletedAt: null };
+
+            // Buat Breadcrumbs
+            let temp = currentFolder;
+            while(temp) {
+                breadcrumbs.unshift({ id: temp._id, name: temp.originalName });
+                if(temp.parentId) temp = await File.findById(temp.parentId);
+                else temp = null;
+            }
         } else {
-            query = { 
-                $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
-                deletedAt: null 
-            };
-            if (!q && filter !== 'all') {
-                query.parentId = folderId || null;
+            // Jika di Root (Bukan dalam folder)
+            if (filter === 'trash') {
+                query = { owner: req.user.id, deletedAt: { $ne: null } };
+            } else if (filter === 'shared') {
+                // Tampilkan file/folder yang dishare KE user ini
+                query = { collaborators: req.user.id, deletedAt: null };
+            } else if (filter === 'starred') {
+                query = { owner: req.user.id, isStarred: true, deletedAt: null };
+            } else {
+                // Default: File milik sendiri di root
+                query = { 
+                    owner: req.user.id,
+                    parentId: null, 
+                    deletedAt: null 
+                };
             }
         }
 
+        // 2. Filter Pencarian & Tipe (Menimpa parentId jika search global)
         if (q) {
-            query.$or = [
-                { originalName: { $regex: q, $options: 'i' } },
-                { tags: { $in: [q] } }
-            ];
-            delete query.parentId; 
+            // Search mencari di seluruh file milik user/shared, mengabaikan folder saat ini
+            query = {
+                $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
+                deletedAt: null,
+                $or: [
+                    { originalName: { $regex: q, $options: 'i' } },
+                    { tags: { $in: [q] } }
+                ]
+            };
         }
 
         if (type) {
@@ -87,38 +136,31 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
 
         if (tag) query.tags = tag;
 
+        // 3. Sorting
         let sort = {};
         if (sortBy) sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
         else sort = { isFolder: -1, createdAt: -1 };
 
+        // 4. Eksekusi
         const files = await File.find(query).sort(sort).select('-base64 -versions.base64');
         
-        let currentFolder = null;
-        let breadcrumbs = [];
-        if (folderId) {
-            currentFolder = await File.findOne({ _id: folderId });
-            let temp = currentFolder;
-            while(temp) {
-                breadcrumbs.unshift({ id: temp._id, name: temp.originalName });
-                if(temp.parentId) temp = await File.findById(temp.parentId);
-                else temp = null;
-            }
-        }
-
         res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Error fetching user files.");
     }
 });
 
+// --- DOWNLOAD VIEW LOGIC (DIPERBAIKI UNTUK FOLDER) ---
 router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier })
-            .select('-base64')
+            .select('-base64') // Jangan load base64 berat
             .populate('comments.user', 'username');
             
         if (!file || file.deletedAt) return res.status(404).render('404');
 
+        // Check Password
         if (file.password) {
             const token = req.cookies[`file_access_${file._id}`];
             if (!token) return res.render('password_prompt', { file, hint: file.passwordHint });
@@ -129,11 +171,23 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
             }
         }
         
-        if (file.originalName.match(/\.(js|css|html|php|vue|dart|json|py|java|c|cpp|xml|ts|jsx|md|txt)$/i)) {
-            return res.render('viewer', { file, downloadLink: `/w-upload/raw/${file.customAlias}` });
+        // Jika file adalah FOLDER -> Arahkan link download ke endpoint ZIP
+        let downloadLink;
+        if (file.isFolder) {
+            downloadLink = `/api/files/${file._id}/zip`;
+        } else {
+            downloadLink = `/w-upload/raw/${file.customAlias}`;
         }
-        res.render('download', { file, downloadLink: `/w-upload/raw/${file.customAlias}` });
+
+        // Jika file teks/coding -> Render Viewer
+        if (!file.isFolder && file.originalName.match(/\.(js|css|html|php|vue|dart|json|py|java|c|cpp|xml|ts|jsx|md|txt)$/i)) {
+            return res.render('viewer', { file, downloadLink });
+        }
+
+        // Render Halaman Download standar
+        res.render('download', { file, downloadLink });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Server Error");
     }
 });
@@ -152,22 +206,21 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
     }
 });
 
+// --- RAW DOWNLOAD (FILE ONLY) ---
 router.get('/w-upload/raw/:identifier', async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
         if (!file || file.deletedAt) return res.status(404).send('File not found');
+        if (file.isFolder) return res.status(400).send('Cannot raw download a folder. Use zip.');
 
-        // Geo Fencing Check (IP Based)
+        // Geo Fencing Check (Simple)
         if (file.allowedGeo && file.allowedGeo.lat) {
             const ip = req.ip || req.socket.remoteAddress;
             const geo = geoip.lookup(ip);
-            // Implementasi sederhana: Tolak jika tidak bisa mendeteksi lokasi atau (opsional) tambahkan logika radius
-            // Jika geo strict diperlukan, biasanya butuh Client-Side GPS -> API POST -> Token Download
-            if (!geo) {
-               // Fallback: Proceed or Block depending on strictness. Here we allow but log.
-            }
+            // Logika geo strict bisa ditambahkan disini
         }
 
+        // Expiration Logic
         if (file.expiresAt && file.expiresAt < new Date()) {
             file.deletedAt = new Date();
             await file.save();
@@ -190,11 +243,8 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
             }
         }
 
-        if (file.downloadLimit !== undefined) {
-            file.downloadLimit -= 1;
-        }
+        if (file.downloadLimit !== undefined) file.downloadLimit -= 1;
 
-        // Update Statistics
         file.downloads += 1;
         file.lastDownloadedAt = new Date();
         const today = new Date().setHours(0,0,0,0);
@@ -202,10 +252,7 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
         if(histIndex > -1) file.downloadHistory[histIndex].count++;
         else file.downloadHistory.push({ date: today, count: 1 });
 
-        // Burn After Read Logic
-        if (file.isBurnAfterRead) {
-            file.deletedAt = new Date();
-        }
+        if (file.isBurnAfterRead) file.deletedAt = new Date();
 
         await file.save();
 

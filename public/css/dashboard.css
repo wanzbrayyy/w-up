@@ -284,9 +284,9 @@
 }
 
 /* Icon Colors */
-.file-preview .fa-image { color: #8b5cf6; }
+.file-preview .fa-image { color: #57B3EE; }
 .file-preview .fa-video { color: #ef4444; }
-.file-preview .fa-file-lines { color: #3b82f6; }
+.file-preview .fa-file-lines { color: #57B3EE; }
 .file-preview .fa-folder { color: #fbbf24; }
 
 /* File Text Details */
@@ -863,10 +863,10 @@
     margin-bottom: 0.5rem;
 }
 
-.file-preview .fa-image { color: #8b5cf6; }
+.file-preview .fa-image { color: #57B3EE; }
 .file-preview .fa-video { color: #ef4444; }
 .file-preview .fa-file-pdf { color: #f97316; }
-.file-preview .fa-file-word { color: #3b82f6; }
+.file-preview .fa-file-word { color: #57B3EE; }
 .file-preview .fa-folder { color: #fbbf24; }
 
 .file-details {
@@ -1435,10 +1435,10 @@
     margin-bottom: 0.5rem;
 }
 
-.file-preview .fa-image { color: #8b5cf6; }
+.file-preview .fa-image { color: #57B3EE; }
 .file-preview .fa-video { color: #ef4444; }
 .file-preview .fa-file-pdf { color: #f97316; }
-.file-preview .fa-file-lines { color: #3b82f6; }
+.file-preview .fa-file-lines { color: #57B3EE; }
 .file-preview .fa-folder { color: #fbbf24; }
 
 .file-details {

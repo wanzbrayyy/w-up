@@ -1,0 +1,52 @@
+<%- include('partials/header', { title: 'Affiliate Program', pageCss: 'dashboard' }) %>
+
+<div class="dashboard-layout">
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" style="padding: 2rem;">
+        <h1><i class="fa-solid fa-money-bill-wave"></i> Affiliate Program</h1>
+        <p class="text-muted">Invite friends and earn storage or rewards!</p>
+
+        <div class="stats-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem; margin:2rem 0;">
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Total Referrals</h3>
+                <p style="font-size:2rem; font-weight:bold;"><%= referrals.length %></p>
+            </div>
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Wallet Balance</h3>
+                <p style="font-size:2rem; font-weight:bold;">$<%= user.walletBalance.toFixed(2) %></p>
+            </div>
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Storage Earned</h3>
+                <p style="font-size:2rem; font-weight:bold;"><%= (user.storageBonus / 1024 / 1024).toFixed(2) %> MB</p>
+            </div>
+        </div>
+
+        <div class="referral-link-box" style="background:rgba(37,99,235,0.1); padding:1.5rem; border-radius:12px; text-align:center; border:1px dashed var(--primary); margin-bottom:2rem;">
+            <h3>Your Referral Link</h3>
+            <code id="affLink" style="display:block; margin:1rem 0; font-size:1.2rem; background:white; padding:0.5rem;"><%= `${new URL(locals.currentUrl || 'http://localhost:3000').origin}/register?ref=${user.referralCode}` %></code>
+            <button class="btn primary-btn" onclick="navigator.clipboard.writeText(document.getElementById('affLink').innerText); showToast('Copied!')">Copy Link</button>
+        </div>
+
+        <div class="referral-list">
+            <h3>Referred Users</h3>
+            <% if (referrals.length === 0) { %>
+                <p class="text-muted">No referrals yet.</p>
+            <% } else { %>
+                <ul style="list-style:none; padding:0;">
+                    <% referrals.forEach(ref => { %>
+                        <li style="background:var(--card); padding:1rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+                            <span><i class="fa-solid fa-user"></i> <%= ref.username %></span>
+                            <span>
+                                <% if(ref.plan === 'pro') { %><span class="badge" style="background:gold; color:black;">PRO</span><% } %>
+                                <%= new Date(ref.createdAt).toLocaleDateString() %>
+                            </span>
+                        </li>
+                    <% }) %>
+                </ul>
+            <% } %>
+        </div>
+    </main>
+</div>
+
+<%- include('partials/footer') %>
