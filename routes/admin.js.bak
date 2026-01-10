@@ -14,14 +14,19 @@ router.get('/', async (req, res) => {
         const userCount = await User.countDocuments();
         const fileCount = await File.countDocuments();
         const totalStorage = await File.aggregate([{ $group: { _id: null, total: { $sum: "$size" } } }]);
+        
         const users = await User.find().sort({ createdAt: -1 }).limit(50);
+        
+        // Ambil top affiliate, pastikan field ada
         const topAffiliates = await User.find({ referralCount: { $gt: 0 } }).sort({ walletBalance: -1 }).limit(10);
+        
         const config = await SystemConfig.getConfig();
 
+        // Safe OS Stats check
         const cpus = os.cpus();
         const serverStats = {
             platform: os.platform(),
-            cpu: cpus && cpus.length > 0 ? cpus[0].model : 'Unknown',
+            cpu: cpus && cpus.length > 0 ? cpus[0].model : 'Unknown CPU',
             cores: cpus ? cpus.length : 1,
             memoryUsage: (1 - os.freemem() / os.totalmem()) * 100,
             uptime: os.uptime() / 3600, 
@@ -38,22 +43,23 @@ router.get('/', async (req, res) => {
             serverStats
         });
     } catch (e) {
+        console.error("ADMIN DASHBOARD ERROR:", e); // Cek terminal Anda untuk melihat error detail
         res.status(500).send(`Admin Error: ${e.message}`);
     }
 });
 
 router.post('/config', async (req, res) => {
     try {
-        const { maintenanceMode, globalAnnouncement, adsEnabled, adScript, adsTxtContent } = req.body;
+        const { maintenanceMode, globalAnnouncement, adsEnabled, adScript } = req.body;
         await SystemConfig.findOneAndUpdate({}, {
             maintenanceMode: maintenanceMode === 'on',
             globalAnnouncement,
             adsEnabled: adsEnabled === 'on',
-            adScript,
-            adsTxtContent
+            adScript
         }, { upsert: true });
         res.redirect('/admin');
     } catch (e) {
+        console.error(e);
         res.status(500).send('Config Update Error');
     }
 });
@@ -85,8 +91,10 @@ router.post('/users/:id/update', async (req, res) => {
             }
             await User.findByIdAndUpdate(userId, update);
         }
+        
         res.redirect('/admin');
     } catch (e) {
+        console.error(e);
         res.status(500).send('Update User Error');
     }
 });

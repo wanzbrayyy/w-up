@@ -3,37 +3,43 @@
 <div class="dashboard-layout">
     <main class="main-content" style="padding: 2rem;">
         <div class="admin-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
-            <h1><i class="fa-solid fa-shield-cat"></i> Admin Dashboard</h1>
+            <h1><i class="fa-solid fa-gauge-high"></i> Admin Console</h1>
             <a href="/dashboard" class="btn secondary-btn">Back to App</a>
         </div>
 
-        <!-- Stats Row -->
-        <div class="stats-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem; margin-bottom:2rem;">
+        <div class="stats-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:1.5rem; margin-bottom:2rem;">
             <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
-                <h3>Total Users</h3>
+                <h3><i class="fa-solid fa-server"></i> Server Load</h3>
+                <div style="margin-top:10px;">
+                    <p>CPU: <%= serverStats.cores %> Cores (<%= (serverStats.load || 0).toFixed(1) %>%)</p>
+                    <p>RAM: <%= (serverStats.memoryUsage || 0).toFixed(1) %>% Used</p>
+                    <p>Uptime: <%= (serverStats.uptime || 0).toFixed(1) %> Hrs</p>
+                </div>
+            </div>
+            <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                <h3>Users</h3>
                 <p style="font-size:2rem; font-weight:bold;"><%= userCount %></p>
             </div>
             <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
-                <h3>Total Files</h3>
+                <h3>Files</h3>
                 <p style="font-size:2rem; font-weight:bold;"><%= fileCount %></p>
             </div>
             <div class="stat-card" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
-                <h3>Storage Used</h3>
+                <h3>Storage</h3>
                 <p style="font-size:2rem; font-weight:bold;"><%= (totalSize / 1024 / 1024 / 1024).toFixed(2) %> GB</p>
             </div>
         </div>
 
-        <div class="admin-grid" style="display:grid; grid-template-columns: 2fr 1fr; gap:2rem;">
+        <div class="admin-grid" style="display:grid; grid-template-columns: 3fr 1fr; gap:2rem;">
             
-            <!-- User Management -->
             <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
                 <h3>User Management</h3>
                 <div style="overflow-x:auto;">
-                    <table style="width:100%; border-collapse:collapse; margin-top:1rem;">
+                    <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
                         <thead>
                             <tr style="text-align:left; border-bottom:2px solid var(--border);">
-                                <th style="padding:0.5rem;">User</th>
-                                <th style="padding:0.5rem;">Role</th>
+                                <th style="padding:0.5rem;">Identity</th>
+                                <th style="padding:0.5rem;">Plan & Bandwidth</th>
                                 <th style="padding:0.5rem;">Status</th>
                                 <th style="padding:0.5rem;">Actions</th>
                             </tr>
@@ -42,34 +48,50 @@
                             <% users.forEach(u => { %>
                                 <tr style="border-bottom:1px solid var(--border);">
                                     <td style="padding:0.8rem 0.5rem;">
-                                        <strong><%= u.username %></strong><br>
-                                        <small><%= u.email || 'No Email' %></small>
+                                        <strong><%= u.username %></strong>
+                                        <% if(u.role === 'admin') { %> <span class="badge" style="background:black; color:white; padding:2px 4px; border-radius:4px; font-size:0.7em;">ADMIN</span> <% } %>
+                                        <br><small><%= u.email || 'No Email' %></small>
                                     </td>
-                                    <td style="padding:0.5rem;"><span class="badge"><%= u.role %></span></td>
                                     <td style="padding:0.5rem;">
-                                        <% if(u.isBanned) { %> <span style="color:red; font-weight:bold;">BANNED</span> <% } else { %> Active <% } %>
-                                        <% if(u.plan === 'pro') { %> <span style="color:gold; font-weight:bold;">PRO</span> <% } %>
+                                        <form action="/admin/users/<%= u._id %>/update" method="POST" style="display:flex; gap:5px; margin-bottom:5px;">
+                                            <input type="hidden" name="action" value="plan">
+                                            <select name="value" onchange="this.form.submit()" style="padding:2px; border-radius:4px; border:1px solid var(--border);">
+                                                <option value="free" <%= u.plan === 'free' ? 'selected' : '' %>>Free</option>
+                                                <option value="pro" <%= u.plan === 'pro' ? 'selected' : '' %>>Pro</option>
+                                            </select>
+                                        </form>
+                                        <form action="/admin/users/<%= u._id %>/update" method="POST" style="display:flex; gap:5px;">
+                                            <input type="hidden" name="action" value="bandwidth">
+                                            <input type="number" name="value" value="<%= u.bandwidthLimit || 0 %>" placeholder="KB/s" style="width:60px; padding:2px; border-radius:4px; border:1px solid var(--border);">
+                                            <button style="border:none; background:none; cursor:pointer;" title="Save Bandwidth"><i class="fa-solid fa-save"></i></button>
+                                        </form>
+                                    </td>
+                                    <td style="padding:0.5rem;">
+                                        <% if(u.isBanned) { %> 
+                                            <span style="color:red; font-weight:bold;">BANNED</span> 
+                                        <% } else { %> 
+                                            <span style="color:green;">Active</span> 
+                                        <% } %>
+                                        <% if(u.isVerified) { %> <i class="fa-solid fa-circle-check" style="color:#3b82f6;"></i> <% } %>
                                     </td>
                                     <td style="padding:0.5rem;">
                                         <div style="display:flex; gap:0.5rem;">
-                                            <a href="/admin/impersonate/<%= u._id %>" class="btn secondary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;" title="Login as User"><i class="fa-solid fa-mask"></i></a>
-                                            
+                                            <a href="/admin/impersonate/<%= u._id %>" class="btn secondary-btn" style="padding:0.3rem 0.6rem;" title="Login as User"><i class="fa-solid fa-mask"></i></a>
                                             <% if(!u.isBanned) { %>
                                                 <form action="/admin/users/<%= u._id %>/update" method="POST" onsubmit="return confirm('Ban user?');">
                                                     <input type="hidden" name="action" value="ban">
-                                                    <button class="btn danger-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;"><i class="fa-solid fa-ban"></i></button>
+                                                    <button class="btn danger-btn" style="padding:0.3rem 0.6rem;"><i class="fa-solid fa-ban"></i></button>
                                                 </form>
                                             <% } else { %>
                                                 <form action="/admin/users/<%= u._id %>/update" method="POST">
                                                     <input type="hidden" name="action" value="unban">
-                                                    <button class="btn primary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;"><i class="fa-solid fa-unlock"></i></button>
+                                                    <button class="btn primary-btn" style="padding:0.3rem 0.6rem;"><i class="fa-solid fa-unlock"></i></button>
                                                 </form>
                                             <% } %>
-
                                             <% if(!u.isVerified) { %>
                                                 <form action="/admin/users/<%= u._id %>/update" method="POST">
                                                     <input type="hidden" name="action" value="verify">
-                                                    <button class="btn secondary-btn" style="padding:0.3rem 0.6rem; font-size:0.8rem; color:#2563eb;"><i class="fa-solid fa-check-circle"></i></button>
+                                                    <button class="btn secondary-btn" style="padding:0.3rem 0.6rem; color:#2563eb;" title="Verify User"><i class="fa-solid fa-check-circle"></i></button>
                                                 </form>
                                             <% } %>
                                         </div>
@@ -81,37 +103,73 @@
                 </div>
             </section>
 
-            <!-- System Configuration -->
-            <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
-                <h3>System Config</h3>
-                <form action="/admin/config" method="POST" style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem;">
-                    
-                    <div style="display:flex; align-items:center; justify-content:space-between;">
-                        <label>Maintenance Mode</label>
-                        <input type="checkbox" name="maintenanceMode" <%= config.maintenanceMode ? 'checked' : '' %>>
-                    </div>
+            <div class="sidebar-col" style="display:flex; flex-direction:column; gap:2rem;">
+                
+                <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                    <h3>Global Config</h3>
+                    <form action="/admin/config" method="POST" style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem;">
+                        <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <label>Maintenance Mode</label>
+                            <input type="checkbox" name="maintenanceMode" <%= config.maintenanceMode ? 'checked' : '' %>>
+                        </div>
+                        <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <label>Enable Ads</label>
+                            <input type="checkbox" name="adsEnabled" <%= config.adsEnabled ? 'checked' : '' %>>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;">Announcement</label>
+                            <input type="text" name="globalAnnouncement" class="full-input" value="<%= config.globalAnnouncement %>">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;">Ad Unit Script (HTML)</label>
+                            <textarea name="adScript" class="full-input" rows="3"><%= config.adScript %></textarea>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;">ads.txt Content</label>
+                            <textarea name="adsTxtContent" class="full-input" rows="3" style="font-family:monospace; font-size:0.8rem;"><%= config.adsTxtContent %></textarea>
+                        </div>
+                        <button type="submit" class="btn primary-btn">Update</button>
+                    </form>
+                </section>
 
-                    <div style="display:flex; align-items:center; justify-content:space-between;">
-                        <label>Enable Ads</label>
-                        <input type="checkbox" name="adsEnabled" <%= config.adsEnabled ? 'checked' : '' %>>
-                    </div>
+                <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                    <h3>Affiliate Payouts</h3>
+                    <ul style="list-style:none; padding:0; margin-top:1rem;">
+                        <% if(topAffiliates.length > 0) { %>
+                            <% topAffiliates.forEach(aff => { %>
+                                <li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem;">
+                                    <div>
+                                        <strong><%= aff.username %></strong>
+                                        <div style="font-size:0.8rem; color:green;">$<%= (aff.walletBalance || 0).toFixed(2) %></div>
+                                        <div style="font-size:0.7rem; color:var(--muted-text);"><%= aff.referralCount || 0 %> Refs</div>
+                                    </div>
+                                    <form action="/admin/payout/<%= aff._id %>" method="POST" onsubmit="return confirm('Mark as paid?');">
+                                        <button class="btn secondary-btn" style="padding:0.2rem 0.5rem; font-size:0.8rem;">Pay</button>
+                                    </form>
+                                </li>
+                            <% }) %>
+                        <% } else { %> 
+                            <li style="color:var(--muted-text); font-size:0.9rem;">No pending payouts.</li> 
+                        <% } %>
+                    </ul>
+                </section>
 
-                    <div>
-                        <label style="display:block; margin-bottom:0.5rem;">Global Announcement</label>
-                        <input type="text" name="globalAnnouncement" class="full-input" value="<%= config.globalAnnouncement %>" placeholder="Message for all users...">
-                    </div>
-
-                    <div>
-                        <label style="display:block; margin-bottom:0.5rem;">Ad Script (HTML)</label>
-                        <textarea name="adScript" class="full-input" rows="4"><%= config.adScript %></textarea>
-                    </div>
-
-                    <button type="submit" class="btn primary-btn">Save Settings</button>
-                </form>
-            </section>
-
+            </div>
         </div>
     </main>
 </div>
+
+<style>
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: var(--primary); }
+    input:checked + .slider:before { transform: translateX(18px); }
+    @media (max-width: 1024px) {
+        .admin-layout-grid { grid-template-columns: 1fr !important; }
+        .col-main { grid-column: span 1 !important; }
+    }
+</style>
 
 <%- include('partials/footer') %>
