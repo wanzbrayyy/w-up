@@ -8,7 +8,7 @@ const User = require('../models/user');
 const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const auth = require('../middleware/auth');
-
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
 router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login'));
 router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
