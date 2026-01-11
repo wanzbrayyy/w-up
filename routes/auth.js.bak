@@ -5,10 +5,6 @@ const geoip = require('geoip-lite');
 const useragent = require('useragent');
 const User = require('../models/user');
 const { loginLimiter, registerLimiter } = require('../middleware/limiters');
-const {
-    generatePasskeyLoginOptions,
-    verifyPasskeyLogin
-} = require('../utils/passkey');
 const router = express.Router();
 
 const PASS_EXPIRY_DAYS = 90;
@@ -202,58 +198,6 @@ router.post('/refresh-token', async (req, res) => {
         res.status(403).json({ message: 'Invalid refresh token.' });
     }
 });
-router.post('/api/auth/passkey/login-options', async (req, res) => {
-    try {
-        // Ambil user berdasarkan username jika ada, atau biarkan kosong untuk discoverable credentials
-        const { username } = req.body;
-        let user;
-        if (username) {
-            user = await User.findOne({ username });
-        }
-        
-        const options = await generatePasskeyLoginOptions(user);
-        
-        if (options.error) {
-            return res.status(404).json({ error: options.error });
-        }
-        
-        res.json(options);
-    } catch(e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-router.post('/api/auth/passkey/verify-login', async (req, res) => {
-    const body = req.body;
-    try {
-        const userID = body.response.userHandle;
-        if (!userID) {
-            throw new Error("User handle not found in response.");
-        }
-        
-        const user = await User.findById(userID);
-        if (!user) {
-            return res.status(404).json({ error: "User not found." });
-        }
-
-        const verification = await verifyPasskeyLogin(user, body);
-
-        if (verification.verified) {
-            // Jika berhasil, buat sesi login seperti biasa
-            const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
-            const refreshToken = jwt.sign({ id: user._id, deviceId: crypto.randomBytes(16).toString('hex') }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-            res.cookie('token', accessToken, { httpOnly: true });
-            res.cookie('refresh_token', refreshToken, { httpOnly: true });
-            
-            return res.json({ verified: true });
-        }
-
-        res.status(400).json({ verified: false, error: 'Verification failed' });
-    } catch (e) {
-        res.status(400).json({ error: e.message });
-    }
-});
 
 router.get('/logout', async (req, res) => {
     const refreshToken = req.cookies.refresh_token;
@@ -268,6 +212,5 @@ router.get('/logout', async (req, res) => {
     res.clearCookie('temp_token');
     res.redirect('/login');
 });
-
 
 module.exports = router;

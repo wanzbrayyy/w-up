@@ -17,6 +17,11 @@ const { r2, PutObjectCommand } = require('../utils/r2');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
+const {
+    passkeyConfig,
+    generateRegistrationOptions,
+    verifyRegistrationResponse,
+} = require('../utils/passkey'); 
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -714,6 +719,79 @@ router.post('/report/:identifier', async (req, res) => {
     file.reports.push({ reason: category ? `${category}: ${reason}` : reason });
     await file.save();
     res.status(200).json({ message: 'Report submitted.' });
+});
+
+router.post('/profile/passkey/register-options', auth.protectApi, async (req, res) => {
+    try {
+        const user = req.user;
+        const options = await generateRegistrationOptions({
+            rpName: passkeyConfig.rpName,
+            rpID: passkeyConfig.rpID,
+            userID: user._id.toString(),
+            userName: user.username,
+            attestationType: 'none',
+            authenticatorSelection: {
+                residentKey: 'required',
+                userVerification: 'required',
+            },
+        });
+
+        user.currentChallenge = options.challenge;
+        await user.save();
+
+        res.json(options);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 2. Verifikasi & Simpan
+router.post('/profile/passkey/verify-registration', auth.protectApi, async (req, res) => {
+    const user = req.user;
+    const body = req.body;
+
+    try {
+        const verification = await verifyRegistrationResponse({
+            response: body,
+            expectedChallenge: user.currentChallenge,
+            expectedOrigin: passkeyConfig.origin,
+            expectedRPID: passkeyConfig.rpID,
+        });
+
+        if (verification.verified) {
+            const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
+            
+            user.passkeys.push({
+                credentialID: Buffer.from(credentialID),
+                credentialPublicKey: Buffer.from(credentialPublicKey),
+                counter,
+                transports: transports || [],
+            });
+            
+            user.currentChallenge = undefined;
+            await user.save();
+        }
+
+        res.json({ verified: verification.verified });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// 3. Hapus Passkey
+router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
+    try {
+        const credentialIdBase64 = req.params.id;
+        
+        await User.updateOne(
+            { _id: req.user._id },
+            { $pull: { passkeys: { credentialID: Buffer.from(credentialIdBase64, 'base64') } } }
+        );
+
+        res.json({ message: 'Passkey removed.' });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to remove passkey.' });
+    }
 });
 
 module.exports = router;

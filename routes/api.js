@@ -724,61 +724,39 @@ router.post('/report/:identifier', async (req, res) => {
 router.post('/profile/passkey/register-options', auth.protectApi, async (req, res) => {
     try {
         const user = req.user;
-        const options = await generateRegistrationOptions({
-            rpName: passkeyConfig.rpName,
-            rpID: passkeyConfig.rpID,
-            userID: user._id.toString(),
-            userName: user.username,
-            attestationType: 'none',
-            authenticatorSelection: {
-                residentKey: 'required',
-                userVerification: 'required',
-            },
-        });
+        if (!user) {
+            return res.status(401).json({ error: "User not authenticated." });
+        }
+        
+        // Gunakan fungsi helper yang sudah dibuat
+        const options = await generatePasskeyRegistrationOptions(user);
 
-        user.currentChallenge = options.challenge;
-        await user.save();
-
+        // Kirim options ke frontend
         res.json(options);
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error("API Error - Register Options:", e);
+        res.status(500).json({ error: e.message || "Server error generating passkey options." });
     }
 });
 
-// 2. Verifikasi & Simpan
 router.post('/profile/passkey/verify-registration', auth.protectApi, async (req, res) => {
     const user = req.user;
     const body = req.body;
 
     try {
-        const verification = await verifyRegistrationResponse({
-            response: body,
-            expectedChallenge: user.currentChallenge,
-            expectedOrigin: passkeyConfig.origin,
-            expectedRPID: passkeyConfig.rpID,
-        });
-
-        if (verification.verified) {
-            const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
-            
-            user.passkeys.push({
-                credentialID: Buffer.from(credentialID),
-                credentialPublicKey: Buffer.from(credentialPublicKey),
-                counter,
-                transports: transports || [],
-            });
-            
-            user.currentChallenge = undefined;
-            await user.save();
+        if (!user) {
+            return res.status(401).json({ error: "User not authenticated." });
         }
+        
+        // Gunakan fungsi helper untuk verifikasi
+        const verification = await verifyPasskeyRegistration(user, body);
 
         res.json({ verified: verification.verified });
     } catch (error) {
+        console.error("API Error - Verify Registration:", error);
         res.status(400).json({ error: error.message });
     }
 });
-
-// 3. Hapus Passkey
 router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
     try {
         const credentialIdBase64 = req.params.id;
