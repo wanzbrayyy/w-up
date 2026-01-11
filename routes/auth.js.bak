@@ -3,12 +3,14 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const geoip = require('geoip-lite');
 const useragent = require('useragent');
+const speakeasy = require('speakeasy');
 const User = require('../models/user');
 const { loginLimiter, registerLimiter } = require('../middleware/limiters');
 const {
     generatePasskeyLoginOptions,
     verifyPasskeyLogin
 } = require('../utils/passkey');
+
 const router = express.Router();
 
 const PASS_EXPIRY_DAYS = 90;
@@ -135,7 +137,6 @@ router.post('/login/2fa', async (req, res) => {
         const decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
         const user = await User.findById(decoded.id);
         
-        const speakeasy = require('speakeasy');
         const verified = speakeasy.totp.verify({
             secret: user.twoFactorSecret.ascii,
             encoding: 'ascii',
@@ -202,9 +203,9 @@ router.post('/refresh-token', async (req, res) => {
         res.status(403).json({ message: 'Invalid refresh token.' });
     }
 });
-router.post('/api/auth/passkey/login-options', async (req, res) => {
+
+router.post('/passkey/login-options', async (req, res) => {
     try {
-        // Ambil user berdasarkan username jika ada, atau biarkan kosong untuk discoverable credentials
         const { username } = req.body;
         let user;
         if (username) {
@@ -223,30 +224,67 @@ router.post('/api/auth/passkey/login-options', async (req, res) => {
     }
 });
 
-router.post('/api/auth/passkey/verify-login', async (req, res) => {
-    const body = req.body;
+router.post('/passkey/verify-login', async (req, res) => {
+    const { id, response } = req.body;
     try {
-        const userID = body.response.userHandle;
-        if (!userID) {
-            throw new Error("User handle not found in response.");
-        }
+        if (!id) return res.status(400).json({ error: "Credential ID is missing." });
+
+        const credentialIdBuffer = Buffer.from(id, 'base64url');
         
-        const user = await User.findById(userID);
-        if (!user) {
-            return res.status(404).json({ error: "User not found." });
+        let user = await User.findOne({
+            'passkeys.credentialID': credentialIdBuffer
+        });
+
+        if (!user && response && response.userHandle) {
+            try {
+                const handleBuffer = Buffer.from(response.userHandle, 'base64');
+                const userIdHex = handleBuffer.toString('utf-8');
+                if (/^[0-9a-fA-F]{24}$/.test(userIdHex)) {
+                    user = await User.findById(userIdHex);
+                }
+            } catch (err) {}
         }
 
-        const verification = await verifyPasskeyLogin(user, body);
+        if (!user) {
+            return res.status(404).json({ error: "User not found or passkey not linked." });
+        }
+
+        const verification = await verifyPasskeyLogin(user, req.body);
 
         if (verification.verified) {
-            // Jika berhasil, buat sesi login seperti biasa
-            const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
-            const refreshToken = jwt.sign({ id: user._id, deviceId: crypto.randomBytes(16).toString('hex') }, process.env.JWT_SECRET, { expiresIn: '7d' });
+            const ip = req.ip || req.connection.remoteAddress;
+            const agent = useragent.parse(req.headers['user-agent']);
+            const geo = geoip.lookup(ip);
+            const location = geo ? `${geo.city}, ${geo.country}` : 'Unknown';
+            const deviceId = crypto.randomBytes(16).toString('hex');
 
-            res.cookie('token', accessToken, { httpOnly: true });
-            res.cookie('refresh_token', refreshToken, { httpOnly: true });
+            const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
+            const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+            user.sessions.push({
+                refreshToken,
+                deviceId,
+                ip,
+                os: agent.os.toString(),
+                browser: agent.toAgent(),
+                location
+            });
+
+            user.loginHistory.push({
+                ip,
+                os: agent.os.toString(),
+                browser: agent.toAgent(),
+                location
+            });
+
+            if (user.loginHistory.length > 20) user.loginHistory.shift();
+
+            await user.save();
+
+            res.cookie('token', accessToken, { httpOnly: true, maxAge: 900000 });
+            res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
             
-            return res.json({ verified: true });
+            return res.json({ verified: true, message: 'Passkey login successful.' });
         }
 
         res.status(400).json({ verified: false, error: 'Verification failed' });
@@ -268,6 +306,5 @@ router.get('/logout', async (req, res) => {
     res.clearCookie('temp_token');
     res.redirect('/login');
 });
-
 
 module.exports = router;

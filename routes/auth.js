@@ -220,6 +220,7 @@ router.post('/passkey/login-options', async (req, res) => {
         
         res.json(options);
     } catch(e) {
+        console.error('Error generating login options:', e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -289,6 +290,7 @@ router.post('/passkey/verify-login', async (req, res) => {
 
         res.status(400).json({ verified: false, error: 'Verification failed' });
     } catch (e) {
+        console.error('Error verifying login:', e);
         res.status(400).json({ error: e.message });
     }
 });
