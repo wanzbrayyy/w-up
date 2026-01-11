@@ -17,7 +17,6 @@ const passkeyConfig = { rpID, rpName, origin };
 
 async function generatePasskeyRegistrationOptions(user) {
     try {
-        // FIX: Konversi Buffer ke 'base64url' string
         const existingCredentials = user.passkeys.map(key => ({
             id: Buffer.from(key.credentialID).toString('base64url'),
             transports: key.transports,
@@ -117,8 +116,6 @@ async function verifyPasskeyRegistration(user, response) {
 
 async function generatePasskeyLoginOptions(user) {
     try {
-        // FIX: Konversi Buffer ke 'base64url' string
-        // Ini yang menyebabkan error 'input.replace is not a function' sebelumnya
         const allowedCredentials = user ? user.passkeys.map(key => ({
             id: Buffer.from(key.credentialID).toString('base64url'),
             type: 'public-key',
@@ -145,11 +142,9 @@ async function generatePasskeyLoginOptions(user) {
 
 async function verifyPasskeyLogin(user, response) {
     try {
-        const responseIdBuffer = Buffer.from(response.id, 'base64url');
-        
         const credential = user.passkeys.find(key => {
-            const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
-            return storedID.equals(responseIdBuffer);
+            const storedID = Buffer.from(key.credentialID).toString('base64url');
+            return storedID === response.id;
         });
 
         if (!credential) {

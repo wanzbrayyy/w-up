@@ -17,15 +17,16 @@ const passkeyConfig = { rpID, rpName, origin };
 
 async function generatePasskeyRegistrationOptions(user) {
     try {
+        // FIX: Konversi Buffer ke 'base64url' string
         const existingCredentials = user.passkeys.map(key => ({
-            id: key.credentialID,
+            id: Buffer.from(key.credentialID).toString('base64url'),
             transports: key.transports,
         }));
 
         const options = await generateRegistrationOptions({
             rpName: passkeyConfig.rpName,
             rpID: passkeyConfig.rpID,
-            userID: Buffer.from(user._id.toString(), 'utf8'),
+            userID: Buffer.from(user._id.toString(), 'utf8').toString('base64url'),
             userName: user.username,
             userDisplayName: user.username,
             attestationType: 'none',
@@ -64,29 +65,21 @@ async function verifyPasskeyRegistration(user, response) {
                 throw new Error('Verification succeeded, but registrationInfo is null.');
             }
 
-            // LOGIKA EKSTRAKSI YANG DIPERBAIKI (Support Nested Object)
-            // Cek apakah data ada di root, atau di dalam properti 'credential'
             let extractedID = registrationInfo.credentialID;
             let extractedKey = registrationInfo.credentialPublicKey;
             let extractedCounter = registrationInfo.counter;
             
-            // Jika struktur data 'nested' (seperti yang terlihat di log Anda)
             if (registrationInfo.credential) {
                 extractedID = extractedID || registrationInfo.credential.id;
                 extractedKey = extractedKey || registrationInfo.credential.publicKey;
                 extractedCounter = extractedCounter || registrationInfo.credential.counter;
             }
 
-            // Fallback terakhir: Ambil ID dari response raw jika masih null
             if (!extractedID && response.id) {
                 extractedID = Buffer.from(response.id, 'base64url');
             }
 
-            // Validasi Data Akhir
             if (!extractedID || !extractedKey) {
-                console.error("CRITICAL DEBUG - Data Structure:", JSON.stringify(registrationInfo, (key, value) => {
-                    return (key === 'publicKey' || key === 'credentialPublicKey') ? '[BUFFER]' : value;
-                }, 2));
                 throw new Error('Internal Error: Credential ID or Public Key could not be extracted.');
             }
 
@@ -124,8 +117,10 @@ async function verifyPasskeyRegistration(user, response) {
 
 async function generatePasskeyLoginOptions(user) {
     try {
+        // FIX: Konversi Buffer ke 'base64url' string
+        // Ini yang menyebabkan error 'input.replace is not a function' sebelumnya
         const allowedCredentials = user ? user.passkeys.map(key => ({
-            id: key.credentialID,
+            id: Buffer.from(key.credentialID).toString('base64url'),
             type: 'public-key',
             transports: key.transports,
         })) : [];
