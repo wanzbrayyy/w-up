@@ -15,9 +15,6 @@ const viewRoutes = require('./routes/view');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const aiRoutes = require('./routes/ai'); 
-
-app.set('trust proxy', 1);
-
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
