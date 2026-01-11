@@ -64,30 +64,38 @@ async function verifyPasskeyRegistration(user, response) {
                 throw new Error('Verification succeeded, but registrationInfo is null.');
             }
 
-            const { credentialPublicKey, credentialID, counter, transports } = registrationInfo;
-
-            // FALLBACK: Jika library gagal parse ID, ambil dari raw response (base64url)
-            let finalCredentialID = credentialID;
-            if (!finalCredentialID && response.id) {
-                finalCredentialID = Buffer.from(response.id, 'base64url'); 
-            } else if (finalCredentialID) {
-                finalCredentialID = Buffer.from(finalCredentialID);
+            // LOGIKA EKSTRAKSI YANG DIPERBAIKI (Support Nested Object)
+            // Cek apakah data ada di root, atau di dalam properti 'credential'
+            let extractedID = registrationInfo.credentialID;
+            let extractedKey = registrationInfo.credentialPublicKey;
+            let extractedCounter = registrationInfo.counter;
+            
+            // Jika struktur data 'nested' (seperti yang terlihat di log Anda)
+            if (registrationInfo.credential) {
+                extractedID = extractedID || registrationInfo.credential.id;
+                extractedKey = extractedKey || registrationInfo.credential.publicKey;
+                extractedCounter = extractedCounter || registrationInfo.credential.counter;
             }
 
-            if (!finalCredentialID || !credentialPublicKey) {
-                console.error("DEBUG INFO - Missing Data:", { 
-                    hasID: !!finalCredentialID, 
-                    hasKey: !!credentialPublicKey, 
-                    keys: Object.keys(registrationInfo) 
-                });
-                throw new Error('Internal Error: Credential ID or Public Key is missing.');
+            // Fallback terakhir: Ambil ID dari response raw jika masih null
+            if (!extractedID && response.id) {
+                extractedID = Buffer.from(response.id, 'base64url');
             }
 
-            const bufferPublicKey = Buffer.from(credentialPublicKey);
+            // Validasi Data Akhir
+            if (!extractedID || !extractedKey) {
+                console.error("CRITICAL DEBUG - Data Structure:", JSON.stringify(registrationInfo, (key, value) => {
+                    return (key === 'publicKey' || key === 'credentialPublicKey') ? '[BUFFER]' : value;
+                }, 2));
+                throw new Error('Internal Error: Credential ID or Public Key could not be extracted.');
+            }
+
+            const bufferID = Buffer.from(extractedID);
+            const bufferKey = Buffer.from(extractedKey);
 
             const existingKey = user.passkeys.find(key => {
                 const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
-                return storedID.equals(finalCredentialID);
+                return storedID.equals(bufferID);
             });
 
             if (existingKey) {
@@ -95,10 +103,10 @@ async function verifyPasskeyRegistration(user, response) {
             }
 
             user.passkeys.push({
-                credentialID: finalCredentialID,
-                credentialPublicKey: bufferPublicKey,
-                counter,
-                transports: transports || [],
+                credentialID: bufferID,
+                credentialPublicKey: bufferKey,
+                counter: extractedCounter,
+                transports: registrationInfo.transports || [],
             });
             
             user.currentChallenge = undefined;

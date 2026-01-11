@@ -10,14 +10,10 @@ if (!process.env.APP_HOSTNAME || !process.env.APP_URL) {
 }
 
 const rpID = process.env.APP_HOSTNAME;
-const rpName = process.env.APP_NAME || 'w upload';
+const rpName = process.env.APP_NAME || 'App Name';
 const origin = process.env.APP_URL;
 
-const passkeyConfig = {
-    rpID,
-    rpName,
-    origin,
-};
+const passkeyConfig = { rpID, rpName, origin };
 
 async function generatePasskeyRegistrationOptions(user) {
     try {
@@ -35,9 +31,9 @@ async function generatePasskeyRegistrationOptions(user) {
             attestationType: 'none',
             excludeCredentials: existingCredentials,
             authenticatorSelection: {
-                residentKey: 'required',
-                userVerification: 'required',
-                requireResidentKey: true,
+                residentKey: 'preferred',
+                userVerification: 'preferred',
+                requireResidentKey: false,
             },
         });
 
@@ -58,28 +54,40 @@ async function verifyPasskeyRegistration(user, response) {
             expectedChallenge: user.currentChallenge,
             expectedOrigin: passkeyConfig.origin,
             expectedRPID: passkeyConfig.rpID,
-            requireUserVerification: true,
+            requireUserVerification: false,
         });
 
         if (verification.verified) {
             const { registrationInfo } = verification;
 
             if (!registrationInfo) {
-                throw new Error('Verification succeeded, but registration information was missing.');
+                throw new Error('Verification succeeded, but registrationInfo is null.');
             }
 
             const { credentialPublicKey, credentialID, counter, transports } = registrationInfo;
 
-            if (!credentialID || !credentialPublicKey) {
-                throw new Error('Internal Error: Credential data is missing after successful verification.');
+            // FALLBACK: Jika library gagal parse ID, ambil dari raw response (base64url)
+            let finalCredentialID = credentialID;
+            if (!finalCredentialID && response.id) {
+                finalCredentialID = Buffer.from(response.id, 'base64url'); 
+            } else if (finalCredentialID) {
+                finalCredentialID = Buffer.from(finalCredentialID);
             }
 
-            const bufferID = Buffer.from(credentialID);
+            if (!finalCredentialID || !credentialPublicKey) {
+                console.error("DEBUG INFO - Missing Data:", { 
+                    hasID: !!finalCredentialID, 
+                    hasKey: !!credentialPublicKey, 
+                    keys: Object.keys(registrationInfo) 
+                });
+                throw new Error('Internal Error: Credential ID or Public Key is missing.');
+            }
+
             const bufferPublicKey = Buffer.from(credentialPublicKey);
 
             const existingKey = user.passkeys.find(key => {
                 const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
-                return storedID.equals(bufferID);
+                return storedID.equals(finalCredentialID);
             });
 
             if (existingKey) {
@@ -87,7 +95,7 @@ async function verifyPasskeyRegistration(user, response) {
             }
 
             user.passkeys.push({
-                credentialID: bufferID,
+                credentialID: finalCredentialID,
                 credentialPublicKey: bufferPublicKey,
                 counter,
                 transports: transports || [],
@@ -96,7 +104,7 @@ async function verifyPasskeyRegistration(user, response) {
             user.currentChallenge = undefined;
             await user.save();
         } else {
-            throw new Error('Passkey verification failed. Signature may be invalid or challenge mismatched.');
+            throw new Error('Passkey verification failed.');
         }
 
         return verification;
@@ -112,12 +120,12 @@ async function generatePasskeyLoginOptions(user) {
             id: key.credentialID,
             type: 'public-key',
             transports: key.transports,
-        })) : undefined;
+        })) : [];
 
         const options = await generateAuthenticationOptions({
             rpID: passkeyConfig.rpID,
             allowCredentials: allowedCredentials,
-            userVerification: 'required',
+            userVerification: 'preferred',
         });
 
         if (user) {
@@ -134,7 +142,7 @@ async function generatePasskeyLoginOptions(user) {
 
 async function verifyPasskeyLogin(user, response) {
     try {
-        const responseIdBuffer = Buffer.from(response.id, 'base64');
+        const responseIdBuffer = Buffer.from(response.id, 'base64url');
         
         const credential = user.passkeys.find(key => {
             const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
@@ -156,7 +164,7 @@ async function verifyPasskeyLogin(user, response) {
                 counter: credential.counter,
                 transports: credential.transports,
             },
-            requireUserVerification: true,
+            requireUserVerification: false,
         });
 
         if (verification.verified) {
