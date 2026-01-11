@@ -1,13 +1,19 @@
+// --- POLYFILL START (Wajib ditaruh paling atas) ---
+// Ini menipu library pdf-parse agar mengira DOMMatrix sudah ada tanpa install canvas
+if (typeof global.DOMMatrix === 'undefined') {
+    global.DOMMatrix = class DOMMatrix {
+        constructor() {
+            this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+            this.m11 = 1; this.m12 = 0; this.m21 = 0; this.m22 = 1; this.m41 = 0; this.m42 = 0;
+        }
+    };
+}
+// --- POLYFILL END ---
+
 const { r2, GetObjectCommand } = require('./r2');
+const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
-// Import pdf-parse dengan error handling jika module crash saat load
-let pdf;
-try {
-    pdf = require('pdf-parse');
-} catch (e) {
-    console.warn("Warning: pdf-parse module could not be loaded.", e);
-}
 
 const streamToBuffer = async (stream) => {
     const chunks = [];
@@ -28,85 +34,68 @@ const extractContent = async (file) => {
         throw new Error('File not in cloud storage.');
     }
 
-    const command = new GetObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: file.r2Key
-    });
-    
-    const r2Res = await r2.send(command);
-    const buffer = await streamToBuffer(r2Res.Body);
-    const mime = file.contentType;
+    try {
+        const command = new GetObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: file.r2Key
+        });
+        
+        const r2Res = await r2.send(command);
+        const buffer = await streamToBuffer(r2Res.Body);
+        const mime = file.contentType;
 
-    let text = '';
+        let text = '';
 
-    if (mime === 'application/pdf') {
-        if (pdf) {
+        if (mime === 'application/pdf') {
             try {
-                // Gunakan opsi render default
                 const data = await pdf(buffer);
                 text = data.text;
-            } catch (e) {
-                console.error("PDF Parsing Error:", e.message);
-                text = "[Error reading PDF content. File might be encrypted or corrupted.]";
+            } catch (pdfError) {
+                console.error("PDF Parse Error:", pdfError);
+                text = "Error reading PDF content (encrypted or unsupported format).";
             }
-        } else {
-            text = "[PDF Parser not available on this server]";
-        }
-    } 
-    else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        try {
+        } 
+        else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
             const result = await mammoth.extractRawText({ buffer });
             text = result.value;
-        } catch (e) {
-            text = "[Error reading DOCX content]";
         }
-    }
-    else if (mime.startsWith('image/')) {
-        try {
-            const { data: { text: ocrText } } = await Tesseract.recognize(buffer, 'eng');
-            text = `[OCR Result]: ${ocrText}`;
-        } catch (e) {
-            text = "[Error processing Image OCR]";
+        else if (mime.startsWith('image/')) {
+            // Tesseract bisa berat, kita wrap try-catch extra
+            try {
+                const { data: { text: ocrText } } = await Tesseract.recognize(buffer, 'eng');
+                text = `[OCR Result]: ${ocrText}`;
+            } catch (ocrError) {
+                text = "Image text extraction failed.";
+            }
         }
-    }
-    else if (mime.match(/(text|json|javascript|xml|html|css|markdown)/)) {
-        text = buffer.toString('utf-8');
-    }
-    else {
-        text = 'Unsupported file type for content reading. Only PDF, DOCX, Images, and Text files are supported.';
-    }
+        else if (mime.match(/(text|json|javascript|xml|html|css)/)) {
+            text = buffer.toString('utf-8');
+        }
+        else {
+            text = 'Unsupported file type for reading.';
+        }
 
-    // Bersihkan teks dari karakter null atau whitespace berlebih
-    return text.replace(/\0/g, '').trim();
+        return text.trim();
+
+    } catch (error) {
+        console.error("File Processing Error:", error);
+        return "Could not read file content.";
+    }
 };
 
 const summarizeText = (text) => {
-    if (!text || text.length < 50) return "Content too short to summarize.";
-    
-    // Simple logic: Ambil 3-5 kalimat pertama yang signifikan
-    const sentences = text.split(/[.!?]/)
-        .map(s => s.trim())
-        .filter(s => s.length > 20); // Hanya ambil kalimat > 20 huruf
-        
-    const summary = sentences.slice(0, 5).join('. ') + (sentences.length > 5 ? '...' : '.');
+    if (!text) return "No content to summarize.";
+    // Simple logic: ambil 5 kalimat pertama
+    const sentences = text.split(/[.!?]/).filter(s => s.trim().length > 0);
+    const summary = sentences.slice(0, 5).join('. ') + (sentences.length > 5 ? '...' : '');
     return summary;
 };
 
 const searchInText = (text, query) => {
-    if (!text) return null;
-    
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    
-    if (!lowerText.includes(lowerQuery)) return null;
-
-    // Cari potongan teks sekitar keyword (Context window)
-    const index = lowerText.indexOf(lowerQuery);
-    const start = Math.max(0, index - 100);
-    const end = Math.min(text.length, index + query.length + 100);
-    
-    const snippet = text.substring(start, end).replace(/\n/g, ' ');
-    return `...${snippet}...`;
+    if (!text || !query) return null;
+    const chunks = chunkText(text, 500);
+    const results = chunks.filter(chunk => chunk.toLowerCase().includes(query.toLowerCase()));
+    return results.slice(0, 3).join('\n---\n');
 };
 
 module.exports = { extractContent, chunkText, summarizeText, searchInText };
