@@ -61,13 +61,17 @@ async function verifyPasskeyRegistration(user, response) {
             requireUserVerification: true,
         });
 
-        if (verification.verified && verification.registrationInfo) {
+        if (verification.verified) {
+            if (!verification.registrationInfo) {
+                throw new Error('Verification succeeded, but registration information was missing.');
+            }
+
             const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
 
             if (!credentialID || !credentialPublicKey) {
-                throw new Error("Credential information is missing from verification.");
+                throw new Error('Internal Error: Credential data is missing after successful verification.');
             }
-            
+
             const existingKey = user.passkeys.find(key => key.credentialID.equals(credentialID));
             if (existingKey) {
                 throw new Error('This passkey is already registered.');
@@ -82,14 +86,14 @@ async function verifyPasskeyRegistration(user, response) {
             
             user.currentChallenge = undefined;
             await user.save();
-        } else if (!verification.verified) {
-            throw new Error('Passkey verification failed. Please try again.');
+        } else {
+            throw new Error('Passkey verification failed. Signature may be invalid or challenge mismatched.');
         }
 
         return verification;
     } catch (error) {
-        console.error("Error verifying registration:", error);
-        throw new Error(error.message || 'Passkey verification failed.');
+        console.error("Error in verifyPasskeyRegistration:", error);
+        throw error;
     }
 }
 
