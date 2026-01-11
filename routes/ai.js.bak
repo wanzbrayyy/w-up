@@ -1,28 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const File = require('../models/file');
+const User = require('../models/user');
 const AiLog = require('../models/aiLog');
 const { extractContent, summarizeText, searchInText } = require('../utils/fileProcessor');
 const { translateText } = require('../utils/tr');
 const { getDocsContent } = require('../utils/docsLoader'); 
-const { r2, GetObjectCommand } = require('../utils/r2');
 const auth = require('../middleware/auth');
-const { 
-    getUserProfile, 
-    getStorageStats, 
-    searchUsers, 
-    getTeamData, 
-    getActivityLog, 
-    AI_SCHEMA_MAP 
-} = require('../utils/aiHelpers');
-
-const streamToString = (stream) =>
-    new Promise((resolve, reject) => {
-        const chunks = [];
-        stream.on("data", (chunk) => chunks.push(chunk));
-        stream.on("error", reject);
-        stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    });
 
 function maskPII(text) {
     return text
@@ -34,47 +18,25 @@ router.post('/chat', auth.protectApi, async (req, res) => {
     try {
         const { message, context } = req.body;
         const userId = req.user.id;
-        const userRole = req.user.role;
         
         const userLang = context.language ? context.language.split('-')[0] : 'en';
+        
         const englishQuery = await translateText(message, 'en', 'auto');
         const cleanMsg = englishQuery.toLowerCase().trim();
         
         let responseText = "";
         let action = null;
 
-        // --- User Profile & Identity ---
         if (cleanMsg.includes('who am i') || cleanMsg.includes('my profile')) {
-            const profile = await getUserProfile(userId);
-            responseText = `Hello **${profile.username}**!\nRole: ${profile.role}\nPlan: ${profile.plan}\nStatus: ${profile.isVerified ? 'Verified' : 'Unverified'}`;
+            const user = await User.findById(userId);
+            responseText = `You are **${user.username}**.\nPlan: **${user.plan.toUpperCase()}**\nStatus: ${user.isVerified ? 'Verified' : 'Unverified'}`;
         }
-        
-        // --- Storage Stats ---
         else if (cleanMsg.includes('storage') || cleanMsg.includes('quota')) {
-            const stats = await getStorageStats(userId);
-            responseText = `**Storage Stats:**\nFiles: ${stats.files}\nUsed: **${stats.used}**\nLimit: **${stats.limit}**`;
+            const count = await File.countDocuments({ owner: userId, deletedAt: null });
+            const user = await User.findById(userId);
+            const usedMB = (user.storageUsed / 1024 / 1024).toFixed(2);
+            responseText = `**Storage Stats:**\nFiles: ${count}\nUsed: **${usedMB} MB**\nLimit: **${(user.storageLimit/1024/1024/1024).toFixed(0)} GB**`;
         }
-        
-        // --- Activity Logs ---
-        else if (cleanMsg.includes('activity') || cleanMsg.includes('login history')) {
-            const logs = await getActivityLog(userId);
-            responseText = `**Recent Activity:**\n${logs}`;
-        }
-        
-        // --- Team Data ---
-        else if (cleanMsg.includes('team') || cleanMsg.includes('members')) {
-            const teamInfo = await getTeamData(userId);
-            responseText = `**Team Information:**\n${teamInfo}`;
-        }
-
-        // --- Admin: User Search ---
-        else if (cleanMsg.startsWith('search user')) {
-            const query = cleanMsg.replace('search user', '').trim();
-            const result = await searchUsers(query, userRole);
-            responseText = `**Search Results:**\n${result}`;
-        }
-
-        // --- File Operations ---
         else if (cleanMsg.startsWith('read file') || cleanMsg.startsWith('open file')) {
             const filename = cleanMsg.replace(/^(read|open) file/, '').trim();
             const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
@@ -82,30 +44,32 @@ router.post('/chat', auth.protectApi, async (req, res) => {
             if (!file) {
                 responseText = `File "${filename}" not found.`;
             } else if (file.owner.toString() !== userId && !file.collaborators.includes(userId)) {
-                responseText = "Permission Denied.";
+                responseText = "Permission Denied: You do not own this file.";
             } else {
                 try {
                     const content = await extractContent(file);
                     const snippet = content.length > 800 ? content.substring(0, 800) + "\n...(truncated)" : content;
-                    responseText = `**${file.originalName}**:\n\`\`\`\n${snippet}\n\`\`\``;
+                    responseText = `**${file.originalName}** (${file.contentType}):\n\`\`\`\n${snippet}\n\`\`\``;
                 } catch (e) {
                     responseText = `Error reading file: ${e.message}`;
                 }
             }
         }
-        else if (cleanMsg.startsWith('summarize')) {
-            const filename = cleanMsg.replace('summarize', '').trim();
+        else if (cleanMsg.startsWith('summarize') || cleanMsg.startsWith('summary')) {
+            const filename = cleanMsg.replace(/^(summarize|summary)/, '').trim();
             const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
 
             if (!file) {
                 responseText = "File not found.";
+            } else if (file.owner.toString() !== userId && !file.collaborators.includes(userId)) {
+                responseText = "Permission Denied.";
             } else {
                 try {
                     const content = await extractContent(file);
                     const summary = summarizeText(content);
                     responseText = `**Summary of ${file.originalName}:**\n\n${summary}`;
                 } catch (e) {
-                    responseText = "Could not generate summary.";
+                    responseText = "Could not generate summary. Supported formats: PDF, DOCX, Text, Images.";
                 }
             }
         }
@@ -118,35 +82,71 @@ router.post('/chat', auth.protectApi, async (req, res) => {
 
                 if (!file) {
                     responseText = "File not found.";
+                } else if (file.owner.toString() !== userId && !file.collaborators.includes(userId)) {
+                    responseText = "Permission Denied.";
                 } else {
                     try {
                         const content = await extractContent(file);
                         const results = searchInText(content, query);
-                        responseText = results ? `**Found in ${file.originalName}:**\n\n${results}` : `No matches found.`;
+                        responseText = results ? `**Found in ${file.originalName}:**\n\n${results}` : `No matches found for "${query}".`;
                     } catch (e) {
-                        responseText = "Search failed.";
+                        responseText = "Search failed. Supported formats: PDF, DOCX, Text.";
                     }
                 }
             } else {
                 responseText = "Format: search [text] in file [filename]";
             }
         }
-        
-        // --- Navigation & Help ---
+        else if (cleanMsg.startsWith('check virus') || cleanMsg.startsWith('scan status')) {
+            const filename = cleanMsg.replace(/^(check virus|scan status)/, '').trim();
+            const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
+            
+            if (!file) {
+                responseText = "File not found.";
+            } else {
+                const status = file.virusScan?.status || 'unscanned';
+                const color = status === 'clean' ? '🟢' : (status === 'infected' ? '🔴' : '⚪');
+                responseText = `**${file.originalName}**\nScan Status: ${color} **${status.toUpperCase()}**\nLast Checked: ${file.virusScan?.lastChecked ? new Date(file.virusScan.lastChecked).toLocaleString() : 'Never'}`;
+            }
+        }
+        else if (cleanMsg.startsWith('get link') || cleanMsg.startsWith('download link')) {
+            const filename = cleanMsg.replace(/^(get|download) link/, '').trim();
+            const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
+            
+            if (!file) {
+                responseText = "File not found.";
+            } else {
+                const link = `${req.protocol}://${req.get('host')}/w-upload/file/${file.customAlias}`;
+                responseText = `Here is your download link for **${file.originalName}**:\n${link}`;
+            }
+        }
+        else if (cleanMsg.startsWith('file info') || cleanMsg.startsWith('metadata')) {
+            const filename = cleanMsg.replace(/^(file info|metadata)/, '').trim();
+            const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
+            
+            if (!file) {
+                responseText = "File not found.";
+            } else {
+                responseText = `**Metadata for ${file.originalName}**:\n- Size: ${(file.size/1024/1024).toFixed(2)} MB\n- Type: ${file.contentType}\n- Uploaded: ${new Date(file.createdAt).toLocaleString()}\n- Downloads: ${file.downloads}\n- Hash: ${file.md5Hash || 'N/A'}`;
+            }
+        }
+        else if (cleanMsg.includes('error')) {
+            if (context.hasError && context.errorMessage) {
+                responseText = `**Error Analysis:** ${context.errorMessage}\n\nThis typically occurs due to validation or connectivity issues.`;
+            } else {
+                responseText = "No visible errors detected.";
+            }
+        }
         else if (cleanMsg.includes('go to')) {
             const page = cleanMsg.includes('settings') ? '/profile' : '/dashboard';
             responseText = "Navigating...";
             action = { type: 'navigate', url: page };
         }
-        else if (cleanMsg.includes('schema') || cleanMsg.includes('structure')) {
-            responseText = `**System Schemas:**\nUser: ${AI_SCHEMA_MAP.User}\nFile: ${AI_SCHEMA_MAP.File}`;
-        }
         else if (cleanMsg.includes('help')) {
-            const { getDocsContent } = require('../utils/docsLoader');
-            responseText = `**Knowledge Base:**\n${getDocsContent().substring(0, 300)}...\n\nCommands: Read file, Summarize, Search User (Admin), My Team, Activity Log.`;
+            responseText = "Try: Read file [name], Summarize [name], Search [text] in file [name], Check virus [name], Get link [name], File info [name].";
         }
         else {
-            responseText = `I can help you manage files, teams, and account. Try asking "Who am I" or "My Team".`;
+            responseText = "I can read PDFs/Images, summarize docs, and search inside files. Try 'Summarize my-doc.pdf'.";
         }
 
         const finalResponse = await translateText(responseText, userLang, 'en');

@@ -9,7 +9,7 @@
         <div class="ai-header">
             <div class="ai-title">
                 <i class="fa-solid fa-robot"></i>
-                <span>AI Assistant</span>
+                <span>ai w-upload</span>
                 <span class="ai-status">Online</span>
             </div>
             <button id="ai-close-btn"><i class="fa-solid fa-chevron-down"></i></button>
@@ -109,11 +109,10 @@
         const commands = [
             "Who am I?",
             "Storage Usage",
-            "Read file",
-            "My Team",
-            "Activity Log",
-            "Search User",
-            "Go to Settings"
+            "Help",
+            "Go to Settings",
+            "Go to Dashboard",
+            "Check Errors"
         ];
 
         const renderSuggestions = () => {
@@ -221,17 +220,16 @@
 
                 if (data.action) {
                     if (data.action.type === 'navigate') {
-                        const redirMsg = document.createElement('div');
-                        redirMsg.className = 'ai-msg bot';
-                        redirMsg.innerHTML = '<i class="fa-solid fa-circle-arrow-right"></i> Redirecting...';
-                        msgs.appendChild(redirMsg);
+                        const loadingDiv = document.createElement('div');
+                        loadingDiv.className = 'ai-msg bot';
+                        loadingDiv.innerHTML = '<i class="fa-solid fa-arrow-right"></i> Redirecting...';
+                        msgs.appendChild(loadingDiv);
                         setTimeout(() => window.location.href = data.action.url, 1000);
                     } else if (data.action.type === 'fill_form') {
                         document.querySelectorAll(data.action.target).forEach(el => {
                             el.value = data.action.value;
-                            el.style.transition = 'background 0.5s';
                             el.style.backgroundColor = '#dcfce7';
-                            setTimeout(() => el.style.backgroundColor = '', 1500);
+                            setTimeout(() => el.style.backgroundColor = '', 2000);
                         });
                     }
                 }
