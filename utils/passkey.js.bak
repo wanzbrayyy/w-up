@@ -5,10 +5,13 @@ const {
     verifyAuthenticationResponse
 } = require('@simplewebauthn/server');
 
-// Pastikan file .env memiliki variabel-variabel ini
-const rpID = process.env.APP_HOSTNAME || 'localhost';
+if (!process.env.APP_HOSTNAME || !process.env.APP_URL) {
+    throw new Error('FATAL: APP_HOSTNAME and APP_URL must be defined in .env file.');
+}
+
+const rpID = process.env.APP_HOSTNAME;
 const rpName = process.env.APP_NAME || 'w upload';
-const origin = process.env.APP_URL || `http://${rpID}:3000`;
+const origin = process.env.APP_URL;
 
 const passkeyConfig = {
     rpID,
@@ -17,10 +20,6 @@ const passkeyConfig = {
 };
 
 async function generatePasskeyRegistrationOptions(user) {
-    if (!user || !user._id || !user.username) {
-        throw new Error("Invalid user object provided for passkey registration.");
-    }
-    
     try {
         const existingCredentials = user.passkeys.map(key => ({
             id: key.credentialID,
@@ -30,7 +29,7 @@ async function generatePasskeyRegistrationOptions(user) {
         const options = await generateRegistrationOptions({
             rpName: passkeyConfig.rpName,
             rpID: passkeyConfig.rpID,
-            userID: user._id.toString(), // Wajib String
+            userID: Buffer.from(user._id.toString(), 'utf8'), // PERBAIKAN DI SINI
             userName: user.username,
             userDisplayName: user.username,
             attestationType: 'none',
@@ -38,6 +37,7 @@ async function generatePasskeyRegistrationOptions(user) {
             authenticatorSelection: {
                 residentKey: 'required',
                 userVerification: 'required',
+                requireResidentKey: true,
             },
         });
 
@@ -46,16 +46,12 @@ async function generatePasskeyRegistrationOptions(user) {
 
         return options;
     } catch (error) {
-        console.error("Error in generateRegistrationOptions:", error);
+        console.error("Error generating registration options:", error);
         throw new Error('Could not prepare passkey registration.');
     }
 }
 
 async function verifyPasskeyRegistration(user, response) {
-    if (!user || !user.currentChallenge) {
-        throw new Error("User or challenge is missing for verification.");
-    }
-
     try {
         const verification = await verifyRegistrationResponse({
             response,
@@ -86,25 +82,18 @@ async function verifyPasskeyRegistration(user, response) {
 
         return verification;
     } catch (error) {
-        console.error("Error in verifyPasskeyRegistration:", error);
+        console.error("Error verifying registration:", error);
         throw new Error(error.message || 'Passkey verification failed.');
     }
 }
 
 async function generatePasskeyLoginOptions(user) {
-    if (!user) throw new Error("User not found.");
-
     try {
-        // Jika user belum punya passkey, jangan generate apa-apa
-        if (!user.passkeys || user.passkeys.length === 0) {
-            return { error: 'No passkeys registered for this user.' };
-        }
-
-        const allowedCredentials = user.passkeys.map(key => ({
+        const allowedCredentials = user ? user.passkeys.map(key => ({
             id: key.credentialID,
             type: 'public-key',
             transports: key.transports,
-        }));
+        })) : undefined;
 
         const options = await generateAuthenticationOptions({
             rpID: passkeyConfig.rpID,
@@ -112,8 +101,13 @@ async function generatePasskeyLoginOptions(user) {
             userVerification: 'required',
         });
 
-        user.currentChallenge = options.challenge;
-        await user.save();
+        if (user) {
+            user.currentChallenge = options.challenge;
+            await user.save();
+        } else {
+            // Jika login tanpa username, simpan challenge di sesi (jika menggunakan sesi)
+            // Untuk API, kita asumsikan user akan ditemukan nanti
+        }
 
         return options;
     } catch (error) {
@@ -123,10 +117,6 @@ async function generatePasskeyLoginOptions(user) {
 }
 
 async function verifyPasskeyLogin(user, response) {
-    if (!user || !user.passkeys || !response.rawId) {
-        throw new Error("Invalid user or response for verification.");
-    }
-    
     try {
         const credential = user.passkeys.find(key => key.credentialID.equals(Buffer.from(response.rawId, 'base64')));
         if (!credential) {
@@ -161,7 +151,6 @@ async function verifyPasskeyLogin(user, response) {
         throw new Error(error.message || 'Passkey login failed.');
     }
 }
-
 
 module.exports = {
     passkeyConfig,
