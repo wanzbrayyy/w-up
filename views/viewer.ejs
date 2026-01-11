@@ -1,47 +1,221 @@
 <%- include('partials/header', { title: file.originalName, pageCss: 'viewer' }) %>
+
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
 
 <main class="viewer-container">
-    <div class="viewer-card">
+    <div class="viewer-wrapper">
         <div class="viewer-header">
-            <div class="file-details">
-                <i class="fa-solid fa-code file-icon"></i>
-                <span class="file-name"><%= file.originalName %></span>
+            <div class="file-meta">
+                <h1 class="file-name"><%= file.originalName %></h1>
+                <span class="file-size"><%= (file.size / 1024 / 1024).toFixed(2) %> MB</span>
             </div>
             <div class="viewer-actions">
-                <button class="action-btn" id="copyCodeBtn">
-                    <i class="fa-solid fa-copy"></i> Copy
+                <button class="action-btn secondary" id="viewerScanBtn" onclick="scanVirus()">
+                    <i class="fa-solid fa-shield-virus"></i> Scan
                 </button>
-                <a href="<%= downloadLink %>" class="action-btn" download>
+                <button class="action-btn secondary" onclick="openEmbedModal()">
+                    <i class="fa-solid fa-code"></i> Embed
+                </button>
+                <a href="<%= downloadLink %>" class="action-btn primary" download>
                     <i class="fa-solid fa-download"></i> Download
                 </a>
             </div>
         </div>
-        <div class="code-container">
-            <pre><code class="code-viewer" id="codeContent"></code></pre>
+
+        <div id="viewerVirusStatus" style="padding: 1rem; display: none;"></div>
+
+        <div class="content-display" id="contentDisplay">
+            <% if (file.contentType.startsWith('video/')) { %>
+                <div class="video-container">
+                    <video id="player" playsinline controls>
+                        <source src="<%= downloadLink %>" type="<%= file.contentType %>" />
+                    </video>
+                </div>
+            <% } else if (file.contentType.startsWith('image/')) { %>
+                <div class="image-container">
+                    <img src="<%= downloadLink %>" id="targetImage" alt="Preview">
+                    <div id="exifData" class="exif-panel" style="display:none;">
+                        <h3><i class="fa-solid fa-camera"></i> EXIF Data</h3>
+                        <ul id="exifList"></ul>
+                    </div>
+                </div>
+            <% } else if (file.originalName.match(/\.(zip|rar|7z)$/i)) { %>
+                <div class="archive-container">
+                    <div class="archive-header">
+                        <i class="fa-solid fa-file-zipper"></i> Archive Explorer
+                    </div>
+                    <ul id="archiveList" class="archive-list">
+                        <li><i class="fa-solid fa-spinner fa-spin"></i> Loading archive content...</li>
+                    </ul>
+                </div>
+            <% } else if (file.originalName.match(/\.(pdf|docx|doc|xlsx|xls|pptx|ppt)$/i)) { %>
+                <div class="doc-container">
+                    <iframe src="https://docs.google.com/gview?url=<%= encodeURIComponent(downloadLink) %>&embedded=true" frameborder="0"></iframe>
+                </div>
+            <% } else { %>
+                <div class="code-container">
+                    <pre><code id="codeContent">Loading content...</code></pre>
+                </div>
+            <% } %>
         </div>
     </div>
 </main>
 
+<div class="modal" id="embedModal">
+    <div class="modal-box">
+        <h3>Embed Code</h3>
+        <p>Copy this code to embed the file in your website.</p>
+        <textarea id="embedCode" class="full-input" rows="4" readonly></textarea>
+        <div class="modal-footer">
+            <button class="btn cancel-btn" onclick="document.getElementById('embedModal').classList.remove('active')">Close</button>
+            <button class="btn confirm-btn" onclick="navigator.clipboard.writeText(document.getElementById('embedCode').value); showToast('Copied!')">Copy</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .viewer-container { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+    .viewer-wrapper { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .viewer-header { padding: 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+    .file-name { font-size: 1.25rem; margin: 0; word-break: break-all; }
+    .file-size { color: var(--muted-text); font-size: 0.9rem; }
+    .viewer-actions { display: flex; gap: 0.5rem; }
+    .content-display { background: var(--bg-secondary); min-height: 400px; display: flex; justify-content: center; align-items: center; position: relative; }
+    .video-container { width: 100%; max-width: 900px; padding: 2rem; }
+    .image-container { display: flex; flex-direction: column; align-items: center; padding: 2rem; width: 100%; gap: 2rem; }
+    .image-container img { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+    .exif-panel { background: var(--card); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 500px; }
+    .exif-panel h3 { margin-top: 0; font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem; }
+    .exif-panel ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem; }
+    .exif-panel li strong { color: var(--primary); }
+    .archive-container { width: 100%; height: 500px; display: flex; flex-direction: column; background: var(--card); }
+    .archive-header { padding: 1rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border); font-weight: bold; }
+    .archive-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+    .archive-list li { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.75rem; font-family: monospace; }
+    .archive-list li:hover { background: var(--bg-hover); }
+    .archive-icon { color: var(--primary); }
+    .doc-container { width: 100%; height: 800px; }
+    .doc-container iframe { width: 100%; height: 100%; }
+    .code-container { width: 100%; text-align: left; padding: 0; margin: 0; }
+    .code-container pre { margin: 0; }
+    .code-container code { font-family: 'Fira Code', monospace; font-size: 0.9rem; padding: 1.5rem; }
+    @media (max-width: 768px) {
+        .viewer-container { padding: 0; }
+        .viewer-wrapper { border-radius: 0; border: none; }
+        .viewer-header { flex-direction: column; align-items: flex-start; }
+    }
+</style>
+
 <script>
-    document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const downloadUrl = "<%= downloadLink %>";
+    const fileName = "<%= file.originalName %>";
+    
+    if (document.getElementById('player')) {
+        const player = new Plyr('#player', {
+            controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'fullscreen'],
+            settings: ['speed'],
+            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] }
+        });
+    }
+
+    if (fileName.match(/\.zip$/i)) {
+        const list = document.getElementById('archiveList');
         try {
-            const response = await fetch('<%= downloadLink %>');
-            const text = await response.text();
-            const codeBlock = document.getElementById('codeContent');
+            const response = await fetch(downloadUrl);
+            const blob = await response.blob();
+            const zip = await JSZip.loadAsync(blob);
+            list.innerHTML = '';
+            let count = 0;
+            zip.forEach((relativePath, zipEntry) => {
+                count++;
+                const li = document.createElement('li');
+                const icon = zipEntry.dir ? 'fa-folder' : 'fa-file';
+                li.innerHTML = `<i class="fa-solid ${icon} archive-icon"></i> ${relativePath}`;
+                list.appendChild(li);
+            });
+            if(count === 0) list.innerHTML = '<li style="padding:1rem;">Archive is empty.</li>';
+        } catch (e) {
+            list.innerHTML = '<li style="padding:1rem; color:red;">Failed to read archive.</li>';
+        }
+    }
+
+    const img = document.getElementById('targetImage');
+    if (img) {
+        img.onload = function() {
+            EXIF.getData(img, function() {
+                const make = EXIF.getTag(this, "Make");
+                const model = EXIF.getTag(this, "Model");
+                const iso = EXIF.getTag(this, "ISOSpeedRatings");
+                const date = EXIF.getTag(this, "DateTimeOriginal");
+                const shutter = EXIF.getTag(this, "ExposureTime");
+                if (make || model || date) {
+                    const list = document.getElementById('exifList');
+                    if(make) list.innerHTML += `<li><strong>Camera:</strong> ${make} ${model}</li>`;
+                    if(iso) list.innerHTML += `<li><strong>ISO:</strong> ${iso}</li>`;
+                    if(shutter) list.innerHTML += `<li><strong>Shutter:</strong> ${shutter && shutter.numerator ? shutter.numerator + '/' + shutter.denominator : shutter}s</li>`;
+                    if(date) list.innerHTML += `<li><strong>Date:</strong> ${date}</li>`;
+                    document.getElementById('exifData').style.display = 'block';
+                }
+            });
+        }
+    }
+
+    const codeBlock = document.getElementById('codeContent');
+    if (codeBlock) {
+        try {
+            const res = await fetch(downloadUrl);
+            const text = await res.text();
             codeBlock.textContent = text;
             hljs.highlightElement(codeBlock);
-
-            document.getElementById('copyCodeBtn').addEventListener('click', () => {
-                navigator.clipboard.writeText(text).then(() => {
-                    showToast('Code copied to clipboard!', 'success');
-                });
-            });
-        } catch (error) {
-            document.getElementById('codeContent').textContent = 'Error loading file content.';
+        } catch (e) {
+            codeBlock.textContent = "Error loading code preview.";
         }
-    });
+    }
+
+    window.openEmbedModal = () => {
+        const type = fileName.match(/\.(mp4|webm|jpg|png|gif)$/i) ? 'media' : 'link';
+        let code = '';
+        if(type === 'media') {
+            code = `<iframe src="${window.location.href}" width="100%" height="500" frameborder="0" allowfullscreen></iframe>`;
+        } else {
+            code = `<a href="${window.location.href}" target="_blank">Download ${fileName}</a>`;
+        }
+        document.getElementById('embedCode').value = code;
+        document.getElementById('embedModal').classList.add('active');
+    };
+
+    window.scanVirus = async () => {
+        const btn = document.getElementById('viewerScanBtn');
+        const statusDiv = document.getElementById('viewerVirusStatus');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+        statusDiv.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/files/<%= file._id %>/scan', { method: 'POST' });
+            const data = await res.json();
+            statusDiv.style.display = 'block';
+            if (data.status === 'clean') {
+                statusDiv.innerHTML = `<div class="alert-box" style="background:#dcfce7; color:#166534; padding:10px; border-radius:5px; text-align:center;"><i class="fa-solid fa-check-circle"></i> Clean (VirusTotal)</div>`;
+            } else if (data.status === 'infected') {
+                statusDiv.innerHTML = `<div class="alert-box" style="background:#fee2e2; color:#b91c1c; padding:10px; border-radius:5px; text-align:center;"><i class="fa-solid fa-triangle-exclamation"></i> Infected!</div>`;
+            } else {
+                statusDiv.innerHTML = `<div class="alert-box" style="background:#f3f4f6; color:#4b5563; padding:10px; border-radius:5px; text-align:center;">Scan Unavailable</div>`;
+            }
+        } catch (e) {
+            showToast('Scan failed', 'error');
+        } finally {
+            btn.innerHTML = '<i class="fa-solid fa-shield-virus"></i> Scan';
+            btn.disabled = false;
+        }
+    };
+});
 </script>
 
 <%- include('partials/footer') %>

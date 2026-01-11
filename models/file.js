@@ -6,21 +6,30 @@ const FileSchema = new mongoose.Schema({
   contentType: { type: String, required: true },
   size: { type: Number, required: true },
   base64: { type: String },
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, 
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   
   isFolder: { type: Boolean, default: false },
   parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', default: null },
   
   downloads: { type: Number, default: 0 },
-  downloadHistory: [{ date: Date, count: Number }], 
+  downloadHistory: [{ date: Date, count: Number }],
   lastDownloadedAt: { type: Date },
 
   password: { type: String },
-  passwordHint: { type: String }, 
+  passwordHint: { type: String },
   expiresAt: { type: Date },
   downloadLimit: { type: Number },
-  isBurnAfterRead: { type: Boolean, default: false }, 
+  isBurnAfterRead: { type: Boolean, default: false },
   
+  // --- New Fields ---
+  sha256Hash: { type: String },
+  virusScan: {
+    status: { type: String, enum: ['unscanned', 'clean', 'infected', 'scanning'], default: 'unscanned' },
+    lastChecked: Date,
+    permalink: String
+  },
+  // ------------------
+
   collaborators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   sharedWithTeams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
   

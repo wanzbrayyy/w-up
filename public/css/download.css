@@ -1,4 +1,3 @@
-/* --- Root Variables (assuming from main.css) --- */
 :root {
     --bg: #f3f4f6;
     --card: #ffffff;
@@ -14,12 +13,11 @@
     --card: #1f2937;
     --text: #f9fafb;
     --muted-text: #9ca3af;
-    --primary: #57B3EE;
+    --primary: #3b82f6;
     --border: #374151;
     --bg-hover: #374151;
 }
 
-/* --- Main Page Layout --- */
 .download-page-container {
     display: flex;
     flex-direction: column;
@@ -63,6 +61,7 @@
     font-weight: 800;
     margin-bottom: 0.5rem;
     word-break: break-all;
+    color: var(--text);
 }
 
 .file-meta {
@@ -71,7 +70,6 @@
     margin-bottom: 1.5rem;
 }
 
-/* --- Download Button --- */
 .btn-download {
     display: flex;
     align-items: center;
@@ -85,8 +83,10 @@
     text-decoration: none;
     font-weight: 600;
     font-size: 1.125rem;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
     box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+    border: none;
+    cursor: pointer;
 }
 
 .btn-download:hover {
@@ -94,13 +94,20 @@
     box-shadow: 0 8px 15px rgba(37, 99, 235, 0.3);
 }
 
-/* --- Preview & Alerts --- */
+.btn-download.disabled {
+    cursor: not-allowed;
+    background: var(--muted-text);
+    box-shadow: none;
+    transform: none;
+}
+
 .preview-area {
     margin-top: 1.5rem;
     border-radius: 0.75rem;
     overflow: hidden;
     border: 1px solid var(--border);
     display: none;
+    background: var(--bg);
 }
 
 .preview-content {
@@ -108,16 +115,37 @@
     display: block;
 }
 
+.virus-badge {
+    margin-bottom: 1rem;
+    display: inline-block;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.badge.loading {
+    background: var(--bg-hover);
+    color: var(--muted-text);
+}
+
 .alert-box {
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
-    margin: 1.5rem 0;
+    margin: 1rem 0;
     text-align: center;
     font-weight: 500;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    font-size: 0.9rem;
 }
 
 .alert-box.warning {
@@ -126,7 +154,62 @@
     border: 1px solid #fde68a;
 }
 
-/* --- Share, Reactions, Report --- */
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+}
+
+.action-btn:hover {
+    background: var(--bg-hover);
+}
+
+.action-btn.secondary {
+    color: var(--muted-text);
+}
+
+.action-btn.secondary:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+.hash-info {
+    margin-top: 1.5rem;
+    text-align: left;
+    background: var(--bg);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text);
+}
+
+.hash-info code {
+    background: var(--card);
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
+    color: var(--primary);
+}
+
 .share-buttons {
     display: flex;
     gap: 0.75rem;
@@ -151,6 +234,7 @@
     cursor: pointer;
     transition: opacity 0.2s;
 }
+
 .share-btn:hover { opacity: 0.9; }
 .share-btn.whatsapp { background: #25D366; }
 .share-btn.twitter { background: #1DA1F2; }
@@ -182,6 +266,7 @@
 .react-btn:hover {
     background: var(--bg-hover);
     border-color: var(--primary);
+    color: var(--primary);
 }
 
 .report-section {
@@ -201,7 +286,6 @@
     color: var(--text);
 }
 
-/* --- Comments Section --- */
 .comments-section {
     width: 100%;
     max-width: 600px;
@@ -214,6 +298,7 @@
 .comments-section h3 {
     font-size: 1.25rem;
     margin-bottom: 1.5rem;
+    color: var(--text);
 }
 
 .comment-list {
@@ -232,18 +317,20 @@
 
 .comment strong {
     color: var(--text);
+    font-size: 0.95rem;
 }
 
 .comment p {
     margin: 0.25rem 0;
-    color: var(--muted-text);
+    color: var(--text);
     word-break: break-word;
+    font-size: 0.95rem;
 }
 
 .comment small {
     font-size: 0.75rem;
     color: var(--muted-text);
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
 #commentForm {
@@ -260,16 +347,22 @@
     color: var(--text);
 }
 
+#commentForm input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
 #commentForm button {
     background: var(--primary);
     color: white;
     border: none;
-    padding: 0 1rem;
+    padding: 0 1.25rem;
     border-radius: 0.5rem;
     cursor: pointer;
+    font-weight: 500;
 }
 
-/* --- Modals (Reused from dashboard.css for consistency) --- */
+/* Modal Styles */
 .modal-backdrop {
     position: fixed;
     top: 0;
@@ -284,12 +377,12 @@
     justify-content: center;
     transition: opacity 0.2s;
     opacity: 0;
-    pointer-events: none;
 }
 
 .modal-backdrop.active {
     opacity: 1;
     pointer-events: auto;
+    display: flex;
 }
 
 .modal-content {
@@ -297,8 +390,9 @@
     padding: 2rem;
     border-radius: 0.75rem;
     width: 90%;
-    max-width: 500px;
+    max-width: 450px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    border: 1px solid var(--border);
 }
 
 .modal-header {
@@ -310,6 +404,8 @@
 
 .modal-header h3 {
     font-size: 1.25rem;
+    margin: 0;
+    color: var(--text);
 }
 
 .modal-close {
@@ -328,6 +424,7 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
+    color: var(--text);
 }
 
 .modal-input {
@@ -338,21 +435,9 @@
     background: var(--bg);
     color: var(--text);
     resize: vertical;
+    box-sizing: border-box;
 }
 
-.action-btn {
-    display: block;
-    width: 100%;
-    background: var(--primary);
-    border: none;
-    color: white;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-/* --- Responsive Adjustments --- */
 @media (max-width: 600px) {
     .download-page-container {
         padding: 1rem;
@@ -373,5 +458,9 @@
     .btn-download {
         font-size: 1rem;
         padding: 0.875rem;
+    }
+    
+    .action-grid {
+        grid-template-columns: 1fr;
     }
 }

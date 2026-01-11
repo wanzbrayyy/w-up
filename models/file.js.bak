@@ -71,6 +71,5 @@ const FileSchema = new mongoose.Schema({
 });
 
 FileSchema.index({ owner: 1, parentId: 1, deletedAt: 1 });
-FileSchema.index({ customAlias: 1 });
 
 module.exports = mongoose.model('File', FileSchema);

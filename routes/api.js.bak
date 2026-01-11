@@ -645,7 +645,7 @@ router.post('/files/:id/scan', async (req, res) => {
         }
 
         const vtResponse = await axios.get(`https://www.virustotal.com/api/v3/files/${file.sha256Hash}`, {
-            headers: { 'x-apikey': "1bcbac229b869b0c440c7dfa11eb094230384c41e3dba213f77f11290441f406" }
+            headers: { 'x-apikey': process.env.VT_API_KEY }
         });
 
         const stats = vtResponse.data.data.attributes.last_analysis_stats;
