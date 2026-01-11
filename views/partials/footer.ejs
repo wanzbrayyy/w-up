@@ -1,84 +1,89 @@
-<% if (locals.isLoggedIn) { %>
-    <%- include('ai_widget') %>
-<% } %>
-
 <script>
         function initializeTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
-            const icon = document.querySelector('.theme-toggle i');
-            if (icon) {
-                icon.className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-            }
+            updateThemeIcon(savedTheme);
         }
         
         function toggleTheme() {
             const current = document.documentElement.getAttribute('data-theme');
             const newTheme = current === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
-            initializeTheme();
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.querySelector('.theme-toggle i');
+            if (icon) {
+                if (theme === 'dark') {
+                    icon.className = 'fa-solid fa-sun';
+                    icon.style.color = '#fbbf24'; 
+                } else {
+                    icon.className = 'fa-solid fa-moon';
+                    icon.style.color = '#64748b'; 
+                }
+            }
         }
 
         function showToast(message, type = 'success') {
             const container = document.getElementById('toastContainer');
+            if (!container) return;
+            
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-circle-exclamation'}"></i> <span>${message}</span>`;
+            
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
         }
 
-        // --- GLOBAL CSRF PATCH FOR FETCH ---
-        const originalFetch = window.fetch;
-        window.fetch = async function (url, options = {}) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            
-            if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
-                if (!options.headers) options.headers = {};
-                
-                // Cek apakah headers adalah instance Headers atau object biasa
-                if (options.headers instanceof Headers) {
-                    options.headers.append('X-CSRF-Token', csrfToken);
-                } else {
-                    options.headers['X-CSRF-Token'] = csrfToken;
-                }
-            }
-            return originalFetch(url, options);
-        };
-
-        // --- GLOBAL CSRF PATCH FOR XHR (Untuk Progress Bar Upload) ---
-        const originalOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url) {
-            this._method = method;
-            return originalOpen.apply(this, arguments);
-        };
-
-        const originalSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.send = function(body) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            if (csrfToken && this._method && ['POST', 'PUT', 'DELETE'].includes(this._method.toUpperCase())) {
-                this.setRequestHeader('X-CSRF-Token', csrfToken);
-            }
-            return originalSend.apply(this, arguments);
-        };
+        // Initialize immediately
+        initializeTheme();
 
         document.addEventListener('DOMContentLoaded', () => {
-            initializeTheme();
-
+            // Mobile Menu
             const menuToggle = document.getElementById('mobileMenuToggle');
             const navMenu = document.getElementById('navMenu');
             const toggleIcon = menuToggle?.querySelector('i');
 
-            if (menuToggle) {
-                menuToggle.addEventListener('click', () => {
+            if (menuToggle && navMenu) {
+                menuToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     navMenu.classList.toggle('active');
-                    if (navMenu.classList.contains('active')) {
-                        toggleIcon.className = 'fa-solid fa-times';
-                    } else {
-                        toggleIcon.className = 'fa-solid fa-bars';
+                    if (toggleIcon) {
+                        toggleIcon.className = navMenu.classList.contains('active') ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
+                    }
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!navMenu.contains(e.target) && !menuToggle.contains(e.target)) {
+                        navMenu.classList.remove('active');
+                        if (toggleIcon) toggleIcon.className = 'fa-solid fa-bars';
                     }
                 });
             }
+
+            // Global Fetch Interceptor for CSRF
+            const originalFetch = window.fetch;
+            window.fetch = async function (url, options = {}) {
+                const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+                const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+                
+                if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+                    if (!options.headers) options.headers = {};
+                    if (options.headers instanceof Headers) {
+                        options.headers.append('X-CSRF-Token', csrfToken);
+                    } else {
+                        options.headers['X-CSRF-Token'] = csrfToken;
+                    }
+                }
+                return originalFetch(url, options);
+            };
         });
     </script>
 </body>
