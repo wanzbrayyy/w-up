@@ -63,13 +63,16 @@ async function verifyPasskeyRegistration(user, response) {
 
         if (verification.verified && verification.registrationInfo) {
             const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
+
+            if (!credentialID || !credentialPublicKey) {
+                throw new Error("Credential information is missing from verification.");
+            }
             
-            // Periksa apakah credentialID (Uint8Array) sudah ada di database (Buffer)
             const existingKey = user.passkeys.find(key => key.credentialID.equals(credentialID));
             if (existingKey) {
                 throw new Error('This passkey is already registered.');
             }
-            
+
             user.passkeys.push({
                 credentialID: Buffer.from(credentialID),
                 credentialPublicKey: Buffer.from(credentialPublicKey),
@@ -79,6 +82,8 @@ async function verifyPasskeyRegistration(user, response) {
             
             user.currentChallenge = undefined;
             await user.save();
+        } else if (!verification.verified) {
+            throw new Error('Passkey verification failed. Please try again.');
         }
 
         return verification;
