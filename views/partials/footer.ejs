@@ -1,3 +1,7 @@
+<% if (locals.isLoggedIn) { %>
+    <%- include('ai_widget') %>
+<% } %>
+
 <script>
         function initializeTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';

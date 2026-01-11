@@ -14,7 +14,7 @@ const authRoutes = require('./routes/auth');
 const viewRoutes = require('./routes/view');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
-
+const aiRoutes = require('./routes/ai'); 
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -98,7 +98,7 @@ app.use('/', authRoutes);
 app.use('/admin', adminRoutes);
 app.use('/', viewRoutes);
 app.use('/api', apiRoutes);
-
+app.use('/api/ai', aiRoutes);
 app.use((err, req, res, next) => {
   if (err.code === 'EBADCSRFTOKEN') {
     return res.status(403).json({ status: 'error', message: 'Invalid or missing CSRF Token' });
