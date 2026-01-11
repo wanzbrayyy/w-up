@@ -64,14 +64,15 @@ async function verifyPasskeyRegistration(user, response) {
         if (verification.verified && verification.registrationInfo) {
             const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
             
+            // Periksa apakah credentialID (Uint8Array) sudah ada di database (Buffer)
             const existingKey = user.passkeys.find(key => key.credentialID.equals(credentialID));
             if (existingKey) {
                 throw new Error('This passkey is already registered.');
             }
-
+            
             user.passkeys.push({
-                credentialID: credentialID,
-                credentialPublicKey: credentialPublicKey,
+                credentialID: Buffer.from(credentialID),
+                credentialPublicKey: Buffer.from(credentialPublicKey),
                 counter,
                 transports: transports || [],
             });

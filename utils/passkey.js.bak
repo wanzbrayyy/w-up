@@ -29,7 +29,7 @@ async function generatePasskeyRegistrationOptions(user) {
         const options = await generateRegistrationOptions({
             rpName: passkeyConfig.rpName,
             rpID: passkeyConfig.rpID,
-            userID: Buffer.from(user._id.toString(), 'utf8'), // PERBAIKAN DI SINI
+            userID: Buffer.from(user._id.toString(), 'utf8'),
             userName: user.username,
             userDisplayName: user.username,
             attestationType: 'none',
@@ -64,14 +64,14 @@ async function verifyPasskeyRegistration(user, response) {
         if (verification.verified && verification.registrationInfo) {
             const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
             
-            const existingKey = user.passkeys.find(key => key.credentialID.equals(Buffer.from(credentialID)));
+            const existingKey = user.passkeys.find(key => key.credentialID.equals(credentialID));
             if (existingKey) {
                 throw new Error('This passkey is already registered.');
             }
 
             user.passkeys.push({
-                credentialID: Buffer.from(credentialID),
-                credentialPublicKey: Buffer.from(credentialPublicKey),
+                credentialID: credentialID,
+                credentialPublicKey: credentialPublicKey,
                 counter,
                 transports: transports || [],
             });
@@ -104,9 +104,6 @@ async function generatePasskeyLoginOptions(user) {
         if (user) {
             user.currentChallenge = options.challenge;
             await user.save();
-        } else {
-            // Jika login tanpa username, simpan challenge di sesi (jika menggunakan sesi)
-            // Untuk API, kita asumsikan user akan ditemukan nanti
         }
 
         return options;
