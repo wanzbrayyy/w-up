@@ -26,6 +26,8 @@
     "mammoth": "^1.11.0",
     "tesseract.js": "^7.0.0",
     "jimp": "^0.22.12",
+    "@simplewebauthn/server": "^13.2.2",
+    "@simplewebauthn/browser": "^13.2.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "nodemailer": "^7.0.12",

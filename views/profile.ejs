@@ -1,5 +1,7 @@
 <%- include('partials/header', { title: 'Account Settings', pageCss: 'dashboard' }) %>
 
+<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+
 <div class="dashboard-layout">
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <%- include('partials/sidebar') %>
@@ -16,8 +18,8 @@
 
         <div class="profile-container">
             <div class="settings-grid">
+                
                 <div class="settings-col">
-                    
                     <section class="settings-card">
                         <div class="card-header">
                             <h3><i class="fa-solid fa-user"></i> Public Profile</h3>
@@ -47,23 +49,22 @@
 
                     <section class="settings-card">
                         <div class="card-header">
-                            <h3><i class="fa-solid fa-gift"></i> Referral Program</h3>
+                            <h3><i class="fa-solid fa-gift"></i> Referral & Storage</h3>
                         </div>
                         <div class="card-body">
                             <div class="referral-box">
-                                <p>Share your code and earn extra storage!</p>
+                                <p>Share your code to earn bonus storage!</p>
                                 <div class="code-display">
                                     <code id="refCode"><%= user.referralCode %></code>
                                     <button class="icon-btn" onclick="copyRef()"><i class="fa-solid fa-copy"></i></button>
                                 </div>
                             </div>
                             
-                            <!-- Storage Stats Section -->
                             <div class="stats-row" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
                                 <% 
                                     const totalLimit = user.storageLimit + (user.storageBonus || 0);
                                     const used = user.storageUsed || 0;
-                                    const percentage = Math.min(100, (used / totalLimit) * 100);
+                                    const percentage = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
                                     const isFull = percentage >= 90;
                                 %>
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
@@ -72,7 +73,7 @@
                                     </span>
                                     <span class="stat-value" style="font-weight:bold; <%= isFull ? 'color:red;' : '' %>">
                                         <%= (used / 1024 / 1024).toFixed(2) %> MB / 
-                                        <%= (totalLimit / 1024 / 1024).toFixed(2) %> MB
+                                        <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB
                                     </span>
                                 </div>
                                 <div class="progress-bar" style="height:12px; background:var(--bg-secondary); border-radius:6px; overflow:hidden; border:1px solid var(--border);">
@@ -81,12 +82,8 @@
                                 
                                 <% if(user.plan === 'free') { %>
                                     <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem; background: linear-gradient(45deg, #f59e0b, #d97706); border:none;">
-                                        <i class="fa-solid fa-crown"></i> Upgrade to PRO (50GB)
+                                        <i class="fa-solid fa-crown"></i> Upgrade to PRO
                                     </button>
-                                <% } else { %>
-                                    <p style="margin-top:1rem; color:#16a34a; text-align:center; font-weight:500; font-size:0.9rem;">
-                                        <i class="fa-solid fa-check-circle"></i> PRO Plan Active
-                                    </p>
                                 <% } %>
                             </div>
                         </div>
@@ -96,20 +93,22 @@
                 <div class="settings-col">
                     <section class="settings-card">
                         <div class="card-header">
-                            <h3><i class="fa-solid fa-shield-halved"></i> Security</h3>
+                            <h3><i class="fa-solid fa-shield-halved"></i> Security Center</h3>
                         </div>
                         <div class="card-body">
-                            <div class="security-status">
-                                <span>Two-Factor Authentication</span>
+                            <div class="security-item">
+                                <div class="security-info">
+                                    <strong>Two-Factor Authentication</strong>
+                                    <p>Secure your account with a TOTP app.</p>
+                                </div>
                                 <span class="badge <%= user.isTwoFactorEnabled ? 'success' : 'warning' %>">
                                     <%= user.isTwoFactorEnabled ? 'Enabled' : 'Disabled' %>
                                 </span>
                             </div>
-                            
                             <% if (!user.isTwoFactorEnabled) { %>
                                 <button id="setup2faBtn" class="btn secondary-btn" style="width:100%">Setup 2FA</button>
                                 <div id="2faSetupArea" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:1rem;">
-                                    <p class="instruction">1. Scan QR Code using Google Authenticator:</p>
+                                    <p class="instruction">1. Scan QR with your authenticator app:</p>
                                     <div id="qrCodeContainer" style="text-align:center; margin:1rem 0;"></div>
                                     <p class="instruction">Secret: <code id="secretCode"></code></p>
                                     <p class="instruction">2. Enter verification code:</p>
@@ -118,9 +117,27 @@
                                         <button type="submit" class="btn primary-btn">Enable</button>
                                     </form>
                                 </div>
-                            <% } else { %>
-                                <p class="text-muted" style="font-size:0.9rem; margin-top:0.5rem;">Your account is secured with 2FA.</p>
                             <% } %>
+
+                            <div class="security-item passkey-section" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+                                <div class="security-info">
+                                    <strong>Passkeys (Biometric Login)</strong>
+                                    <p>Log in with Face ID or fingerprint.</p>
+                                </div>
+                                <button id="addPasskeyBtn" class="btn primary-btn"><i class="fa-solid fa-plus"></i> Add</button>
+                            </div>
+                            <div id="passkeyList">
+                                <% if(user.passkeys && user.passkeys.length > 0) { %>
+                                    <% user.passkeys.forEach(key => { %>
+                                        <div class="passkey-item">
+                                            <span><i class="fa-solid fa-fingerprint"></i> Registered Device</span>
+                                            <button onclick="removePasskey('<%= key.credentialID.toString('base64') %>')" class="btn danger-btn-sm"><i class="fa-solid fa-trash"></i></button>
+                                        </div>
+                                    <% }) %>
+                                <% } else { %>
+                                    <p class="text-muted" style="text-align:center; padding:1rem;">No passkeys registered.</p>
+                                <% } %>
+                            </div>
                         </div>
                     </section>
 
@@ -134,7 +151,7 @@
                                 <% user.sessions.forEach(session => { %>
                                     <li class="session-item">
                                         <div class="session-icon">
-                                            <i class="fa-solid <%= session.os.toLowerCase().includes('win') ? 'fa-windows' : (session.os.toLowerCase().includes('mac') ? 'fa-apple' : 'fa-mobile') %>"></i>
+                                            <i class="fa-brands <%= session.os.toLowerCase().includes('win') ? 'fa-windows' : (session.os.toLowerCase().includes('mac') ? 'fa-apple' : (session.os.toLowerCase().includes('linux') ? 'fa-linux' : 'fa-mobile-screen-button')) %>"></i>
                                         </div>
                                         <div class="session-info">
                                             <div class="session-title">
@@ -151,29 +168,6 @@
                             </ul>
                         </div>
                     </section>
-
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-code"></i> API Keys</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="api-list">
-                                <% user.apiKeys.forEach(key => { %>
-                                    <div class="api-item">
-                                        <div class="api-info">
-                                            <strong><%= key.label %></strong>
-                                            <code><%= key.key.substring(0, 12) %>...</code>
-                                        </div>
-                                        <button class="icon-btn" onclick="navigator.clipboard.writeText('<%= key.key %>'); showToast('Copied!')"><i class="fa-solid fa-copy"></i></button>
-                                    </div>
-                                <% }) %>
-                            </div>
-                            <form id="createApiKeyForm" style="display:flex; gap:0.5rem; margin-top:1rem;">
-                                <input type="text" id="apiKeyLabel" class="full-input" placeholder="Label (e.g. Script)" required>
-                                <button type="submit" class="btn primary-btn">Generate</button>
-                            </form>
-                        </div>
-                    </section>
                 </div>
             </div>
         </div>
@@ -181,7 +175,7 @@
 </div>
 
 <style>
-    .profile-container { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+    .profile-container { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
     .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
     .settings-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1rem; }
     .card-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary); }
@@ -211,24 +205,21 @@
     .badge.warning { background: #fef9c3; color: #854d0e; }
     .badge.current { background: #dbeafe; color: #1e40af; }
     .danger-btn-sm { background: #fee2e2; color: #ef4444; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
-    .api-item { display: flex; justify-content: space-between; align-items: center; background: var(--bg); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; border: 1px solid var(--border); }
-    .api-info { display: flex; flex-direction: column; }
-    .api-info code { font-size: 0.8rem; color: var(--muted-text); }
-    @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } }
+    .security-item { display: flex; justify-content: space-between; align-items: center; }
+    .security-info p { margin: 0.25rem 0 0 0; color: var(--muted-text); font-size: 0.9rem; }
+    .passkey-item { display:flex; justify-content:space-between; align-items:center; background:var(--bg-secondary); padding:0.75rem; border-radius:8px; margin-bottom:0.5rem; border:1px solid var(--border); }
 </style>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const { startRegistration } = SimpleWebAuthnBrowser;
+
     const sidebar = document.getElementById('mainSidebar');
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
     const closeSidebarBtn = document.getElementById('closeSidebarBtn');
 
-    function toggleSidebar() {
-        sidebar.classList.toggle('active');
-        sidebarOverlay.classList.toggle('active');
-    }
-
+    function toggleSidebar() { sidebar.classList.toggle('active'); sidebarOverlay.classList.toggle('active'); }
     if(sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
     if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
     if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
@@ -236,16 +227,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveProfileBtn').addEventListener('click', async () => {
         const publicBio = document.getElementById('publicBio').value;
         const isPublicProfile = document.getElementById('publicProfileToggle').checked;
-        
-        try {
-            const res = await fetch('/api/profile/settings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ publicBio, isPublicProfile })
-            });
-            if(res.ok) showToast('Profile updated', 'success');
-            else showToast('Update failed', 'error');
-        } catch(e) { showToast('Network error', 'error'); }
+        const res = await fetch('/api/profile/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publicBio, isPublicProfile })
+        });
+        if(res.ok) showToast('Profile updated', 'success');
+        else showToast('Update failed', 'error');
     });
 
     const setup2faBtn = document.getElementById('setup2faBtn');
@@ -277,20 +265,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.getElementById('createApiKeyForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const label = document.getElementById('apiKeyLabel').value;
-        const res = await fetch('/api/profile/api-key', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ label })
-        });
-        const data = await res.json();
-        if(res.ok) {
-            prompt('Your new API Key:', data.key);
-            location.reload();
+    document.getElementById('addPasskeyBtn').addEventListener('click', async () => {
+        try {
+            const resp = await fetch('/api/profile/passkey/register-options', { method: 'POST' });
+            const options = await resp.json();
+            const attResp = await startRegistration(options);
+            const verificationResp = await fetch('/api/profile/passkey/verify-registration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(attResp),
+            });
+            const verificationJSON = await verificationResp.json();
+            if (verificationJSON && verificationJSON.verified) {
+                showToast('Passkey registered successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Registration failed: ' + (verificationJSON.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            showToast('Could not create passkey: ' + error, 'error');
         }
     });
+
+    window.removePasskey = async (id) => {
+        if (!confirm('Remove this passkey?')) return;
+        const res = await fetch(`/api/profile/passkey/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToast('Passkey removed.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Failed to remove passkey.', 'error');
+        }
+    };
 
     window.revokeSession = async (deviceId) => {
         if(!confirm('Log out this device?')) return;
@@ -305,13 +311,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.copyRef = () => {
-        const code = document.getElementById('refCode').innerText;
-        navigator.clipboard.writeText(code);
+        navigator.clipboard.writeText(document.getElementById('refCode').innerText);
         showToast('Code copied!', 'success');
     };
 
     document.getElementById('upgradeBtn')?.addEventListener('click', async () => {
-        if(!confirm('Upgrade to Pro for $5/month? (Simulation)')) return;
+        if(!confirm('Upgrade to Pro plan? (Simulation)')) return;
         const res = await fetch('/billing/upgrade', { method: 'POST' });
         const data = await res.json();
         if(res.ok) { showToast(data.message, 'success'); setTimeout(() => location.reload(), 1000); }

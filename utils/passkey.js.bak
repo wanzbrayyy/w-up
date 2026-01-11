@@ -1,0 +1,24 @@
+const {
+    generateRegistrationOptions,
+    verifyRegistrationResponse,
+    generateAuthenticationOptions,
+    verifyAuthenticationResponse
+} = require('@simplewebauthn/server');
+
+const rpID = process.env.APP_HOSTNAME || 'localhost';
+const rpName = 'w upload';
+const origin = process.env.APP_URL || `http://${rpID}:3000`;
+
+const passkeyConfig = {
+    rpID,
+    rpName,
+    origin,
+};
+
+module.exports = {
+    passkeyConfig,
+    generateRegistrationOptions,
+    verifyRegistrationResponse,
+    generateAuthenticationOptions,
+    verifyAuthenticationResponse,
+};
