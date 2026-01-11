@@ -19,7 +19,6 @@ const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
 const {
     passkeyConfig,
-    generateRegistrationOptions,
     generatePasskeyRegistrationOptions,
     verifyPasskeyRegistration,
     verifyRegistrationResponse,

@@ -20,6 +20,8 @@ const auth = require('../middleware/auth');
 const {
     passkeyConfig,
     generateRegistrationOptions,
+    generatePasskeyRegistrationOptions,
+    verifyPasskeyRegistration,
     verifyRegistrationResponse,
 } = require('../utils/passkey'); 
 
@@ -728,10 +730,7 @@ router.post('/profile/passkey/register-options', auth.protectApi, async (req, re
             return res.status(401).json({ error: "User not authenticated." });
         }
         
-        // Gunakan fungsi helper yang sudah dibuat
         const options = await generatePasskeyRegistrationOptions(user);
-
-        // Kirim options ke frontend
         res.json(options);
     } catch (e) {
         console.error("API Error - Register Options:", e);
@@ -748,15 +747,14 @@ router.post('/profile/passkey/verify-registration', auth.protectApi, async (req,
             return res.status(401).json({ error: "User not authenticated." });
         }
         
-        // Gunakan fungsi helper untuk verifikasi
         const verification = await verifyPasskeyRegistration(user, body);
-
         res.json({ verified: verification.verified });
     } catch (error) {
         console.error("API Error - Verify Registration:", error);
         res.status(400).json({ error: error.message });
     }
 });
+
 router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
     try {
         const credentialIdBase64 = req.params.id;
@@ -768,6 +766,7 @@ router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
 
         res.json({ message: 'Passkey removed.' });
     } catch (e) {
+        console.error("API Error - Remove Passkey:", e);
         res.status(500).json({ error: 'Failed to remove passkey.' });
     }
 });
