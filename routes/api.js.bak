@@ -18,12 +18,11 @@ const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
 const {
-    passkeyConfig,
     generatePasskeyRegistrationOptions,
     verifyPasskeyRegistration,
-    verifyRegistrationResponse,
-} = require('../utils/passkey'); 
-
+    generatePasskeyLoginOptions,
+    verifyPasskeyLogin
+} = require('../utils/passkey');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -738,14 +737,13 @@ router.post('/profile/passkey/register-options', auth.protectApi, async (req, re
 });
 
 router.post('/profile/passkey/verify-registration', auth.protectApi, async (req, res) => {
-    const body = req.body;
     try {
         const user = await User.findById(req.user.id);
         if (!user) {
             return res.status(401).json({ error: "User not authenticated." });
         }
         
-        const verification = await verifyPasskeyRegistration(user, body);
+        const verification = await verifyPasskeyRegistration(user, req.body);
         res.json({ verified: verification.verified });
     } catch (error) {
         console.error("API Error - Verify Registration:", error);
@@ -758,7 +756,7 @@ router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
         const credentialIdBase64 = req.params.id;
         
         await User.updateOne(
-            { _id: req.user._id },
+            { _id: req.user.id },
             { $pull: { passkeys: { credentialID: Buffer.from(credentialIdBase64, 'base64') } } }
         );
 
@@ -766,6 +764,59 @@ router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
     } catch (e) {
         console.error("API Error - Remove Passkey:", e);
         res.status(500).json({ error: 'Failed to remove passkey.' });
+    }
+});
+
+// --- PASSKEY LOGIN (PUBLIC) ---
+
+router.post('/auth/passkey/login-options', async (req, res) => {
+    try {
+        const { username } = req.body;
+        
+        let user;
+        if (username) {
+            user = await User.findOne({ username });
+        }
+
+        const options = await generatePasskeyLoginOptions(user);
+        
+        // Simpan challenge sementara di session/cookie jika user tidak ditemukan (opsional)
+        // Namun karena implementasi passkey.js Anda menyimpan challenge di DB User, 
+        // maka username wajib ada untuk flow ini.
+        if (!user) {
+             return res.status(404).json({ error: "User not found." });
+        }
+
+        res.json(options);
+    } catch (e) {
+        console.error("API Error - Login Options:", e);
+        res.status(500).json({ error: "Server error generating login options." });
+    }
+});
+
+router.post('/auth/passkey/verify-login', async (req, res) => {
+    try {
+        const { username, response } = req.body;
+        
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        const verification = await verifyPasskeyLogin(user, response);
+        
+        if (verification.verified) {
+            // Generate JWT Token atau Session di sini sesuai logika auth Anda
+            // Contoh: const token = signToken(user._id);
+            // res.json({ verified: true, token });
+            
+            res.json({ verified: true, message: "Login successful" });
+        } else {
+            res.status(400).json({ error: "Verification failed." });
+        }
+    } catch (error) {
+        console.error("API Error - Verify Login:", error);
+        res.status(400).json({ error: error.message });
     }
 });
 

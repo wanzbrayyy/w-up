@@ -739,10 +739,9 @@ router.post('/profile/passkey/register-options', auth.protectApi, async (req, re
 router.post('/profile/passkey/verify-registration', auth.protectApi, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        if (!user) {
-            return res.status(401).json({ error: "User not authenticated." });
-        }
+        if (!user) return res.status(401).json({ error: "User not authenticated." });
         
+        // Mengirim req.body utuh sangat penting
         const verification = await verifyPasskeyRegistration(user, req.body);
         res.json({ verified: verification.verified });
     } catch (error) {
@@ -753,11 +752,12 @@ router.post('/profile/passkey/verify-registration', auth.protectApi, async (req,
 
 router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
     try {
-        const credentialIdBase64 = req.params.id;
+        // Handle base64url or standard base64 from URL params
+        const credentialIdBuffer = Buffer.from(req.params.id, 'base64url');
         
         await User.updateOne(
             { _id: req.user.id },
-            { $pull: { passkeys: { credentialID: Buffer.from(credentialIdBase64, 'base64') } } }
+            { $pull: { passkeys: { credentialID: credentialIdBuffer } } }
         );
 
         res.json({ message: 'Passkey removed.' });
