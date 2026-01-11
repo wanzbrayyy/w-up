@@ -3,22 +3,18 @@
 
     <div class="nav-right">
         <div class="nav-menu" id="navMenu">
-            <% if (locals.isLoggedIn && locals.user) { %>
+            <% if (isLoggedIn) { %>
                 <span class="nav-item welcome-text" style="cursor: default; background: none;">
                     Welcome, <%= user.username %>
-                    <% if (user.isVerified) { %> <i class="fa-solid fa-circle-check" style="color:#3b82f6;"></i> <% } %>
-                    <% if (user.plan === 'pro') { %> <span class="badge" style="background:gold; color:black; font-size:0.7rem; padding:2px 5px; border-radius:4px;">PRO</span> <% } %>
                 </span>
-                
-                <% if (user.role === 'admin') { %>
-                    <a href="/admin" class="nav-item" style="color:#ef4444;"><i class="fa-solid fa-shield-halved"></i> Admin</a>
-                <% } %>
-
                 <a href="/dashboard" class="nav-item">
                     <i class="fa-solid fa-table-columns"></i> Dashboard
                 </a>
                 <a href="/profile" class="nav-item">
                     <i class="fa-solid fa-user-cog"></i> Profile
+                </a>
+                <a href="/docs" class="nav-item">
+                    <i class="fa-solid fa-book"></i> Docs
                 </a>
                 <a href="/logout" class="nav-item">
                     <i class="fa-solid fa-right-from-bracket"></i> Logout
@@ -32,10 +28,7 @@
             <% } %>
         </div>
 
-        <button class="theme-toggle" id="themeToggleBtn">
-            <i class="fa-solid fa-moon"></i>
-        </button>
-        
+        <button class="theme-toggle" onclick="toggleTheme()"><i class="fa-solid fa-moon"></i></button>
         <button class="mobile-menu-toggle" id="mobileMenuToggle">
             <i class="fa-solid fa-bars"></i>
         </button>

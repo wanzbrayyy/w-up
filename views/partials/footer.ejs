@@ -1,90 +1,73 @@
-<script>
-        function initializeTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            updateThemeIcon(savedTheme);
-        }
-        
-        function toggleTheme() {
-            const current = document.documentElement.getAttribute('data-theme');
-            const newTheme = current === 'dark' ? 'light' : 'dark';
-            
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            updateThemeIcon(newTheme);
-        }
+<!-- Sisipkan Script Global & Theme Logic Di Sini -->
+    <script>
+        const root = document.documentElement;
+        const themeBtn = document.getElementById('themeToggleBtn');
+        const menuToggle = document.getElementById('mobileMenuToggle');
+        const navMenu = document.getElementById('navMenu');
 
-        function updateThemeIcon(theme) {
-            const icon = document.querySelector('.theme-toggle i');
-            if (icon) {
-                if (theme === 'dark') {
-                    icon.className = 'fa-solid fa-sun';
-                    icon.style.color = '#fbbf24'; 
-                } else {
-                    icon.className = 'fa-solid fa-moon';
-                    icon.style.color = '#64748b'; 
+        function setTheme(theme) {
+            root.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            if (themeBtn) {
+                const icon = themeBtn.querySelector('i');
+                if (icon) {
+                    icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
                 }
             }
+        }
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        setTheme(savedTheme);
+
+        if (themeBtn) {
+            themeBtn.addEventListener('click', () => {
+                const current = root.getAttribute('data-theme');
+                const newTheme = current === 'dark' ? 'light' : 'dark';
+                setTheme(newTheme);
+            });
+        }
+
+        if (menuToggle && navMenu) {
+            menuToggle.addEventListener('click', () => {
+                navMenu.classList.toggle('active');
+                const icon = menuToggle.querySelector('i');
+                if (navMenu.classList.contains('active')) {
+                    icon.className = 'fa-solid fa-times';
+                } else {
+                    icon.className = 'fa-solid fa-bars';
+                }
+            });
         }
 
         function showToast(message, type = 'success') {
             const container = document.getElementById('toastContainer');
             if (!container) return;
-            
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-circle-exclamation'}"></i> <span>${message}</span>`;
-            
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
             container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
+            setTimeout(() => toast.remove(), 4000);
         }
 
-        // Initialize immediately
-        initializeTheme();
-
-        document.addEventListener('DOMContentLoaded', () => {
-            // Mobile Menu
-            const menuToggle = document.getElementById('mobileMenuToggle');
-            const navMenu = document.getElementById('navMenu');
-            const toggleIcon = menuToggle?.querySelector('i');
-
-            if (menuToggle && navMenu) {
-                menuToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    navMenu.classList.toggle('active');
-                    if (toggleIcon) {
-                        toggleIcon.className = navMenu.classList.contains('active') ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
-                    }
-                });
-
-                document.addEventListener('click', (e) => {
-                    if (!navMenu.contains(e.target) && !menuToggle.contains(e.target)) {
-                        navMenu.classList.remove('active');
-                        if (toggleIcon) toggleIcon.className = 'fa-solid fa-bars';
-                    }
-                });
-            }
-
-            // Global Fetch Interceptor for CSRF
-            const originalFetch = window.fetch;
-            window.fetch = async function (url, options = {}) {
-                const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-                const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-                
-                if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
-                    if (!options.headers) options.headers = {};
-                    if (options.headers instanceof Headers) {
-                        options.headers.append('X-CSRF-Token', csrfToken);
-                    } else {
-                        options.headers['X-CSRF-Token'] = csrfToken;
-                    }
+        // Global Fetch Interceptor untuk CSRF
+        const originalFetch = window.fetch;
+        window.fetch = async function (url, options = {}) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+                if (!options.headers) options.headers = {};
+                if (options.headers instanceof Headers) {
+                    options.headers.append('X-CSRF-Token', csrfToken);
+                } else {
+                    options.headers['X-CSRF-Token'] = csrfToken;
                 }
-                return originalFetch(url, options);
-            };
-        });
+            }
+            return originalFetch(url, options);
+        };
+
+        // Insert AI Widget (Jika Login)
+        <% if (locals.isLoggedIn) { %>
+            <%- include('ai_widget') %>
+        <% } %>
     </script>
 </body>
 </html>

@@ -1,78 +1,61 @@
 :root {
     --bg: #ffffff;
-    --bg-secondary: #f8fafc;
-    --text: #0f172a;
-    --card: #ffffff;
-    --border: #e2e8f0;
+    --text: #1f2937;
     --primary: #57B3EE;
-    --muted-text: #64748b;
+    --primary-hover: #57B3EE;
+    --secondary: #e5e7eb;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --muted-text: #6b7280;
+    --bg-secondary: #f9fafb;
+    --bg-hover: #f3f4f6;
 }
 
 [data-theme="dark"] {
     --bg: #0f172a;
-    --bg-secondary: #1e293b;
-    --text: #f8fafc;
+    --text: #f1f5f9;
+    --primary: #57B3EE;
+    --primary-hover: #57B3EE;
+    --secondary: #334155;
     --card: #1e293b;
     --border: #334155;
-    --primary: #57B3EE;
     --muted-text: #94a3b8;
+    --bg-secondary: #1e293b;
+    --bg-hover: #334155;
 }
 
 body {
+    margin: 0;
+    font-family: 'Inter', system-ui, sans-serif;
     background-color: var(--bg);
     color: var(--text);
-    margin: 0;
-    font-family: system-ui, -apple-system, sans-serif;
     transition: background-color 0.3s, color 0.3s;
 }
 
+/* Navbar CSS */
 .navbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.8rem 1.5rem;
-    background: var(--card);
+    background-color: var(--card);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     z-index: 1000;
 }
 
+.logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary);
+    text-decoration: none;
+}
+
 .nav-right {
     display: flex;
     align-items: center;
     gap: 1rem;
-}
-
-.theme-toggle {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    transition: all 0.2s;
-    z-index: 1001; 
-}
-
-.theme-toggle:hover {
-    background: var(--bg-secondary);
-    transform: scale(1.05);
-    border-color: var(--primary);
-}
-
-.mobile-menu-toggle {
-    display: none;
-    background: transparent;
-    border: none;
-    font-size: 1.5rem;
-    color: var(--text);
-    cursor: pointer;
 }
 
 .nav-menu {
@@ -94,23 +77,49 @@ body {
 }
 
 .nav-item.primary {
-    background: var(--primary);
+    background-color: var(--primary);
     color: white;
     padding: 0.5rem 1rem;
-    border-radius: 6px;
+    border-radius: 0.5rem;
 }
 
-.badge-pro {
-    background: gold;
-    color: black;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 800;
-    margin-left: 5px;
+.nav-item.primary:hover {
+    background-color: var(--primary-hover);
+    color: white;
 }
 
-/* Toast */
+/* Theme Toggle Button Style */
+.theme-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+    background-color: var(--bg-hover);
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+.mobile-menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+/* Toast Notification */
 .toast-container {
     position: fixed;
     top: 20px;
@@ -124,7 +133,7 @@ body {
 .toast {
     background: var(--card);
     color: var(--text);
-    padding: 12px 20px;
+    padding: 1rem 1.5rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     border-left: 4px solid var(--primary);
@@ -132,17 +141,18 @@ body {
     align-items: center;
     gap: 10px;
     animation: slideIn 0.3s ease;
-    border: 1px solid var(--border);
+    min-width: 250px;
 }
 
 .toast.error { border-left-color: #ef4444; }
 .toast.success { border-left-color: #22c55e; }
+.toast i { font-size: 1.2rem; }
+.toast.success i { color: #22c55e; }
+.toast.error i { color: #ef4444; }
 
-@keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
+/* Responsive Navbar */
 @media (max-width: 768px) {
     .mobile-menu-toggle {
         display: block;
@@ -152,17 +162,21 @@ body {
         position: absolute;
         top: 100%;
         left: 0;
-        right: 0;
-        background: var(--card);
+        width: 100%;
+        background-color: var(--card);
         flex-direction: column;
-        padding: 1rem;
-        gap: 1rem;
+        padding: 1rem 0;
         border-bottom: 1px solid var(--border);
-        box-shadow: 0 10px 15px rgba(0,0,0,0.1);
         display: none;
     }
 
     .nav-menu.active {
         display: flex;
+    }
+
+    .nav-item {
+        width: 100%;
+        text-align: center;
+        padding: 0.5rem 0;
     }
 }
