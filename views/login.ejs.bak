@@ -36,7 +36,6 @@
         </div>
     </div>
 </main>
-
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const { startAuthentication } = SimpleWebAuthnBrowser;
@@ -44,7 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const passkeyBtn = document.getElementById('passkeyLoginBtn');
     const passwordForm = document.getElementById('passwordForm');
     const errorBox = document.getElementById('formError');
-    const usernameInput = document.getElementById('username');
 
     const handleSuccess = () => {
         showToast('Login successful!', 'success');
@@ -56,16 +54,12 @@ document.addEventListener('DOMContentLoaded', () => {
         errorBox.style.display = 'block';
     };
 
+    // Passkey Login Handler
     passkeyBtn.addEventListener('click', async () => {
         errorBox.style.display = 'none';
         try {
-            const respOptions = await fetch('/api/auth/passkey/login-options', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: usernameInput.value })
-            });
-
-            if (!respOptions.ok) throw new Error('Could not get passkey options.');
+            const respOptions = await fetch('/api/auth/passkey/login-options', { method: 'POST' });
+            if (!respOptions.ok) throw new Error('Could not get passkey options from server.');
 
             const options = await respOptions.json();
             const authResp = await startAuthentication(options);
@@ -83,11 +77,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(verificationJSON.error || 'Passkey verification failed.');
             }
         } catch (error) {
-            console.error(error);
             handleError(error.message);
         }
     });
 
+    // Password Login Handler
     passwordForm.addEventListener('submit', async function(e) {
         e.preventDefault();
         errorBox.style.display = 'none';
@@ -96,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const password = e.target.password.value;
 
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch('/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -104,10 +98,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (response.ok) {
+                // Handle 2FA if required
                 if (data.status === '2fa_required') {
-                    const code = prompt('Enter your 2FA code:');
+                    const code = prompt('Please enter your 2FA code:');
                     if (code) {
-                        const twoFaResponse = await fetch('/api/auth/login/2fa', {
+                        const twoFaResponse = await fetch('/login/2fa', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ code })
@@ -126,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 handleError(data.message);
             }
         } catch (error) {
-            handleError('Network error. Please try again.');
+            handleError('A network error occurred.');
         }
     });
 });
