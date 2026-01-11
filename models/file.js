@@ -5,9 +5,11 @@ const FileSchema = new mongoose.Schema({
   customAlias: { type: String, required: true, unique: true },
   contentType: { type: String, required: true },
   size: { type: Number, required: true },
-  base64: { type: String },
+  base64: { type: String, required: false },
+  storageType: { type: String, enum: ['mongo', 'r2'], default: 'r2' },
+  r2Key: { type: String },
+
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  
   isFolder: { type: Boolean, default: false },
   parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', default: null },
   
@@ -21,14 +23,14 @@ const FileSchema = new mongoose.Schema({
   downloadLimit: { type: Number },
   isBurnAfterRead: { type: Boolean, default: false },
   
-  // --- New Fields ---
   sha256Hash: { type: String },
+  md5Hash: { type: String },
+  
   virusScan: {
     status: { type: String, enum: ['unscanned', 'clean', 'infected', 'scanning'], default: 'unscanned' },
     lastChecked: Date,
     permalink: String
   },
-  // ------------------
 
   collaborators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   sharedWithTeams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
@@ -62,11 +64,10 @@ const FileSchema = new mongoose.Schema({
   isHidden: { type: Boolean, default: false },
   tags: [{ type: String }],
   description: { type: String, default: '' },
-  md5Hash: { type: String },
   
   versions: [{
     version: Number,
-    base64: String,
+    r2Key: String, 
     uploadedAt: { type: Date, default: Date.now },
     size: Number
   }],

@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const geoip = require('geoip-lite');
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
@@ -234,13 +235,42 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
 
         await file.save();
 
-        const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
-        res.writeHead(200, {
-            'Content-Type': file.contentType,
-            'Content-Length': fileBuffer.length,
-            'Content-Disposition': `inline; filename="${file.originalName}"`
-        });
-        res.end(fileBuffer);
+        if (file.storageType === 'r2' && file.r2Key) {
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: "wanzofc",
+                    Key: file.r2Key
+                });
+                const response = await r2.send(command);
+
+                res.setHeader('Content-Type', file.contentType);
+                res.setHeader('Content-Length', file.size);
+                res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
+
+                response.Body.pipe(res);
+
+                if (file.isBurnAfterRead) {
+                    r2.send(new DeleteObjectCommand({ 
+                        Bucket: "wanzofc", 
+                        Key: file.r2Key 
+                    })).catch(err => console.error('R2 Delete Error:', err));
+                }
+            } catch (r2Error) {
+                console.error("R2 Error:", r2Error);
+                return res.status(500).send("Error retrieving file from cloud storage.");
+            }
+        } else if (file.base64) {
+            const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
+            res.writeHead(200, {
+                'Content-Type': file.contentType,
+                'Content-Length': fileBuffer.length,
+                'Content-Disposition': `inline; filename="${file.originalName}"`
+            });
+            res.end(fileBuffer);
+        } else {
+            res.status(500).send("File content missing.");
+        }
+
     } catch (error) {
         console.error(error);
         res.status(500).send('Server Error');

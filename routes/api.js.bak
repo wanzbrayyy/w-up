@@ -9,10 +9,11 @@ const qrcode = require('qrcode');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 const archiver = require('archiver');
-// const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
+const { r2, PutObjectCommand } = require('../utils/r2'); 
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
@@ -34,20 +35,47 @@ async function sendEmail(to, subject, htmlContent) {
             html: htmlContent
         };
         await transporter.sendMail(mailOptions);
-        console.log(`Email sent successfully to: ${to}`);
         return true;
     } catch (error) {
-        console.error('Error sending email:', error);
         return false;
     }
 }
 
-// --- Folder Management ---
+function sanitizeFilename(name) {
+    return name.replace(/\0/g, '')
+        .replace(/(\.\.(\/|\\|$))+/g, '')
+        .replace(/[^\w\s.\-()]/gi, '_')
+        .trim();
+}
+
+function validateMagicBytes(buffer, contentType) {
+    const hex = buffer.toString('hex', 0, 8).toUpperCase();
+    
+    if (hex.startsWith('4D5A')) return false; 
+
+    const signatures = {
+        'image/jpeg': ['FFD8FF'],
+        'image/png': ['89504E47'],
+        'image/gif': ['47494638'],
+        'application/pdf': ['25504446'],
+        'application/zip': ['504B0304'],
+        'application/x-rar-compressed': ['52617221']
+    };
+
+    if (signatures[contentType]) {
+        return signatures[contentType].some(sig => hex.startsWith(sig));
+    }
+
+    return true; 
+}
+
 router.post('/folder', auth.protectApi, async (req, res) => {
     try {
         const { name, parentId } = req.body;
+        const cleanName = sanitizeFilename(name); 
+        
         const newFolder = new File({
-            originalName: name,
+            originalName: cleanName,
             customAlias: `folder_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
             contentType: 'application/vnd.google-apps.folder',
             size: 0,
@@ -63,11 +91,9 @@ router.post('/folder', auth.protectApi, async (req, res) => {
     }
 });
 
-// --- Upload Logic ---
 router.post('/upload', async (req, res) => {
     try {
         let user = null;
-        
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
                 auth.protectApi(req, res, () => { 
@@ -90,10 +116,26 @@ router.post('/upload', async (req, res) => {
 
         let { filename, contentType, base64, watermarkText, parentId, description, tags, hidden, expires, limit, password, hint, geo, burn, customAlias } = req.body;
         
-        const buffer = Buffer.from(base64.split(',')[1], 'base64');
+        // 1. Convert Base64 ke Buffer
+        let buffer = Buffer.from(base64.split(',')[1], 'base64');
+        
+        // 2. Magic Bytes Validation
+        if (!validateMagicBytes(buffer, contentType)) {
+            return res.status(400).json({ status: 'error', message: 'File content does not match extension.' });
+        }
+
+        // 3. Watermark Process (jika ada)
+        if (contentType.startsWith('image/') && watermarkText) {
+            const image = await jimp.read(buffer);
+            const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
+            image.print(font, 10, image.bitmap.height - 40, watermarkText);
+            buffer = await image.getBufferAsync(jimp.MIME_PNG); 
+        }
+
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
+        // 4. Duplicate Check
         if (user) {
             const duplicate = await File.findOne({ owner: user.id, md5Hash: hash, deletedAt: null });
             if (duplicate) {
@@ -106,7 +148,7 @@ router.post('/upload', async (req, res) => {
             }
         }
 
-        let finalAlias = customAlias || filename;
+        let finalAlias = customAlias ? sanitizeFilename(customAlias) : sanitizeFilename(filename);
         let counter = 1;
         while (await File.findOne({ customAlias: finalAlias })) {
             const ext = path.extname(filename);
@@ -115,22 +157,120 @@ router.post('/upload', async (req, res) => {
             counter++;
         }
 
+        // 5. UPLOAD TO R2 (CORE CHANGE)
+        const r2Key = `${user ? user.id : 'guest'}/${Date.now()}_${uuidv4()}_${finalAlias}`;
+        
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: r2Key,
+            Body: buffer,
+            ContentType: contentType
+        }));
+
+        // 6. Save Metadata to MongoDB
+        const newFile = new File({
+            originalName: sanitizeFilename(filename), 
+            customAlias: finalAlias, 
+            contentType, 
+            size: buffer.length, 
+            // base64: '', 
+            storageType: 'r2', 
+            r2Key: r2Key,      
+            owner: user ? user.id : null,
+            parentId: parentId || null,
+            description,
+            tags: tags ? tags.split(',').map(t => t.trim()) : [],
+            isHidden: hidden === 'true',
+            md5Hash: hash,
+            sha256Hash: sha256,
+            isBurnAfterRead: burn === 'true',
+            passwordHint: hint,
+            allowedGeo: geo ? JSON.parse(geo) : undefined,
+            expiresAt: expires ? new Date(Date.now() + expires * 3600000) : undefined,
+            downloadLimit: limit ? parseInt(limit) : undefined
+        });
+
+        if (password) newFile.password = await bcrypt.hash(password, 10);
+
+        await newFile.save();
+        res.status(201).json({ status: 'success', url: `${req.protocol}://${req.get('host')}/w-upload/file/${finalAlias}`, filename: finalAlias });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Upload failed' });
+    }
+});router.post('/upload', async (req, res) => {
+    try {
+        let user = null;
+        if (req.headers.authorization || req.cookies.token) {
+            await new Promise((resolve) => {
+                auth.protectApi(req, res, () => { 
+                    if(req.user) user = req.user; 
+                    resolve(); 
+                });
+            });
+        }
+
+        if (!user && req.body.fileRequestSlug) {
+             const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
+             if (reqObj) {
+                 user = { id: reqObj.owner };
+                 req.body.parentId = reqObj.destinationFolder; 
+             }
+        } 
+        else if (!user && process.env.ALLOW_GUEST_UPLOAD !== 'true') {
+             return res.status(401).json({ message: 'Authentication required.' });
+        }
+
+        let { filename, contentType, base64, watermarkText, parentId, description, tags, hidden, expires, limit, password, hint, geo, burn, customAlias } = req.body;
+        let buffer = Buffer.from(base64.split(',')[1], 'base64');
+        if (!validateMagicBytes(buffer, contentType)) {
+            return res.status(400).json({ status: 'error', message: 'File content does not match extension.' });
+        }
         if (contentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
             const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
             image.print(font, 10, image.bitmap.height - 40, watermarkText);
-            base64 = await image.getBase64Async(jimp.MIME_PNG);
+            buffer = await image.getBufferAsync(jimp.MIME_PNG); 
         }
 
-        const base64Data = base64.split(';base64,').pop();
-        const fileSize = (base64Data.length * (3/4)) - (base64Data.endsWith('==') ? 2 : (base64Data.endsWith('=') ? 1 : 0));
+        const hash = crypto.createHash('md5').update(buffer).digest('hex');
+        const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+        if (user) {
+            const duplicate = await File.findOne({ owner: user.id, md5Hash: hash, deletedAt: null });
+            if (duplicate) {
+                return res.status(200).json({ 
+                    status: 'success', 
+                    message: 'Duplicate file detected', 
+                    url: `${req.protocol}://${req.get('host')}/w-upload/file/${duplicate.customAlias}`, 
+                    filename: duplicate.customAlias 
+                });
+            }
+        }
 
+        let finalAlias = customAlias ? sanitizeFilename(customAlias) : sanitizeFilename(filename);
+        let counter = 1;
+        while (await File.findOne({ customAlias: finalAlias })) {
+            const ext = path.extname(filename);
+            const name = path.basename(filename, ext);
+            finalAlias = `${name}_${counter}${ext}`;
+            counter++;
+        }
+        const r2Key = `${user ? user.id : 'guest'}/${Date.now()}_${uuidv4()}_${finalAlias}`;
+        
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: r2Key,
+            Body: buffer,
+            ContentType: contentType
+        }));
         const newFile = new File({
-            originalName: filename, 
+            originalName: sanitizeFilename(filename), 
             customAlias: finalAlias, 
             contentType, 
-            size: fileSize, 
-            base64, 
+            size: buffer.length, 
+      //      base64: '',
+            storageType: 'r2', 
+            r2Key: r2Key,     
             owner: user ? user.id : null,
             parentId: parentId || null,
             description,
@@ -161,8 +301,14 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
         const response = await axios.get(url, { responseType: 'arraybuffer' });
         const contentType = response.headers['content-type'];
         const buffer = Buffer.from(response.data, 'binary');
+        
+        if (!validateMagicBytes(buffer, contentType)) {
+            return res.status(400).json({ message: 'Remote file type validation failed.' });
+        }
+
         const base64 = `data:${contentType};base64,${buffer.toString('base64')}`;
-        const filename = path.basename(url) || `remote_${Date.now()}`;
+        let filename = path.basename(url) || `remote_${Date.now()}`;
+        filename = sanitizeFilename(filename);
         
         const newFile = new File({
             originalName: filename,
@@ -172,7 +318,8 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
             base64,
             owner: req.user.id,
             parentId: parentId || null,
-            md5Hash: crypto.createHash('md5').update(buffer).digest('hex')
+            md5Hash: crypto.createHash('md5').update(buffer).digest('hex'),
+            sha256Hash: crypto.createHash('sha256').update(buffer).digest('hex')
         });
         await newFile.save();
         res.status(201).json({ message: 'Remote upload success' });
@@ -183,8 +330,9 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
 
 router.post('/upload/chunk/init', auth.protectApi, async (req, res) => {
     const { filename, totalSize } = req.body;
+    const cleanName = sanitizeFilename(filename);
     const sessionId = crypto.randomBytes(16).toString('hex');
-    const session = new UploadSession({ sessionId, owner: req.user.id, filename, totalSize });
+    const session = new UploadSession({ sessionId, owner: req.user.id, filename: cleanName, totalSize });
     await session.save();
     res.json({ sessionId });
 });
@@ -206,17 +354,26 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
 
     session.chunks.sort((a, b) => a.index - b.index);
     const fullBase64 = session.chunks.map(c => c.data.split(',')[1]).join('');
+    
+    const buffer = Buffer.from(fullBase64, 'base64');
+    if (!validateMagicBytes(buffer, 'application/octet-stream')) { 
+         await UploadSession.deleteOne({ _id: session._id });
+         return res.status(400).json({ message: 'File rejected due to security policy.' });
+    }
+
     const finalBase64 = `data:application/octet-stream;base64,${fullBase64}`;
     const fileSize = (fullBase64.length * (3/4)); 
 
     const newFile = new File({
-        originalName: session.filename,
-        customAlias: `chunk_${Date.now()}_${session.filename}`,
+        originalName: sanitizeFilename(session.filename),
+        customAlias: `chunk_${Date.now()}_${sanitizeFilename(session.filename)}`,
         contentType: 'application/octet-stream', 
         size: fileSize,
         base64: finalBase64,
         owner: req.user.id,
-        parentId: parentId || null
+        parentId: parentId || null,
+        md5Hash: crypto.createHash('md5').update(buffer).digest('hex'),
+        sha256Hash: crypto.createHash('sha256').update(buffer).digest('hex')
     });
 
     await newFile.save();
@@ -224,10 +381,10 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
     res.status(201).json({ message: 'File assembled successfully' });
 });
 
-// --- File Actions ---
 router.put('/files/:id/rename', auth.protectApi, async (req, res) => {
     try {
-        await File.findOneAndUpdate({ _id: req.params.id, owner: req.user.id }, { originalName: req.body.newName });
+        const cleanName = sanitizeFilename(req.body.newName);
+        await File.findOneAndUpdate({ _id: req.params.id, owner: req.user.id }, { originalName: cleanName });
         res.json({ message: 'Renamed successfully' });
     } catch (e) { res.status(500).json({ message: 'Error' }); }
 });
@@ -237,7 +394,7 @@ router.put('/files/:id/meta', auth.protectApi, async (req, res) => {
         const { description, tags, isHidden } = req.body;
         const update = {};
         if (description !== undefined) update.description = description;
-        if (tags !== undefined) update.tags = tags.split(',').map(t => t.trim());
+        if (tags !== undefined) update.tags = tags.split(',').map(t => sanitizeFilename(t.trim()));
         if (isHidden !== undefined) update.isHidden = isHidden;
         await File.findOneAndUpdate({ _id: req.params.id, owner: req.user.id }, update);
         res.json({ message: 'Metadata updated' });
@@ -292,7 +449,6 @@ router.delete('/trash/empty', auth.protectApi, async (req, res) => {
     res.json({ message: 'Trash emptied' });
 });
 
-// --- Collaboration & Sharing ---
 router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
     const { username } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
@@ -306,9 +462,8 @@ router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
         await file.save();
     }
     
-    // Kirim notifikasi email ke collaborator
     if (collabUser.email) {
-        const link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; // Direct ke folder
+        const link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; 
         const html = `<h3>You've been invited to collaborate!</h3>
                       <p>${req.user.username} has added you to the folder/file: <b>${file.originalName}</b></p>
                       <p><a href="${link}">Open Folder</a></p>`;
@@ -323,7 +478,6 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
     if (!file) return res.status(404).json({ message: 'File not found' });
     
-    // Cek jika email terdaftar sebagai user, jadikan collaborator otomatis
     const existingUser = await User.findOne({ email });
     if (existingUser && !file.collaborators.includes(existingUser._id)) {
         file.collaborators.push(existingUser._id);
@@ -332,8 +486,6 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
 
     let link;
     if (file.isFolder) {
-        // Jika folder, arahkan ke dashboard dengan folderId atau route view khusus
-        // Disini kita arahkan ke dashboard jika user login, atau public link jika ada
         link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; 
     } else {
         link = `${req.protocol}://${req.get('host')}/w-upload/file/${file.customAlias}`;
@@ -356,9 +508,6 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     res.json({ message: 'Email sent successfully' });
 });
 
-// --- ZIP Download (Single Folder & Bulk) ---
-
-// 1. Download Specific Folder as ZIP
 router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
     try {
         const folderId = req.params.id;
@@ -369,8 +518,6 @@ router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
 
         if (!folder || !folder.isFolder) return res.status(404).send('Folder not found or access denied');
 
-        // Cari semua file di dalam folder (Hanya level 1 untuk performa, atau rekursif jika perlu)
-        // Untuk base64 storage, rekursif sangat berat. Kita ambil direct children dulu.
         const files = await File.find({ parentId: folderId, isFolder: false, deletedAt: null });
 
         const archive = archiver('zip', { zlib: { level: 9 } });
@@ -379,7 +526,6 @@ router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
         archive.pipe(res);
 
         for (const file of files) {
-            // Convert Base64 string back to Buffer
             if (file.base64) {
                 const base64Data = file.base64.split(';base64,').pop();
                 const buffer = Buffer.from(base64Data, 'base64');
@@ -394,7 +540,6 @@ router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
     }
 });
 
-// 2. Bulk Download as ZIP (Selected Files)
 router.post('/files/zip', auth.protectApi, async (req, res) => {
     try {
         const { fileIds } = req.body;
@@ -403,7 +548,7 @@ router.post('/files/zip', auth.protectApi, async (req, res) => {
         const files = await File.find({ 
             _id: { $in: fileIds }, 
             $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
-            isFolder: false // Skip folder nested untuk bulk zip sementara demi performa
+            isFolder: false 
         });
 
         const archive = archiver('zip', { zlib: { level: 9 } });
@@ -425,7 +570,6 @@ router.post('/files/zip', auth.protectApi, async (req, res) => {
     }
 });
 
-// --- Comments & Reactions ---
 router.post('/files/:alias/comment', auth.protectApi, async (req, res) => {
     const { text } = req.body;
     const file = await File.findOne({ customAlias: req.params.alias });
@@ -452,10 +596,10 @@ router.post('/files/:alias/react', auth.protectApi, async (req, res) => {
     res.json({ message: 'Reaction updated', counts: { like: file.reactions.like.length, love: file.reactions.love.length } });
 });
 
-// --- Team Management ---
 router.post('/teams', auth.protectApi, async (req, res) => {
     const { name } = req.body;
-    const team = new Team({ name, owner: req.user.id, members: [req.user.id] });
+    const cleanName = sanitizeFilename(name);
+    const team = new Team({ name: cleanName, owner: req.user.id, members: [req.user.id] });
     await team.save();
     req.user.teams.push(team._id);
     await req.user.save();
@@ -486,7 +630,7 @@ router.post('/file-requests', auth.protectApi, async (req, res) => {
     const reqFile = new FileRequest({
         owner: req.user.id,
         slug,
-        label,
+        label: sanitizeFilename(label),
         destinationFolder: folderId || null
     });
     await reqFile.save();
@@ -518,7 +662,6 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
     res.json({ message: `Request ${status}` });
 });
 
-// --- Profile & Security ---
 router.put('/profile/settings', auth.protectApi, async (req, res) => {
     const { isPublicProfile, publicBio } = req.body;
     req.user.isPublicProfile = isPublicProfile;
@@ -582,14 +725,6 @@ router.delete('/profile/devices', auth.protectApi, async (req, res) => {
     res.json({ message: 'All other devices logged out.' });
 });
 
-router.post('/report/:identifier', async (req, res) => {
-    const { reason, category } = req.body;
-    const file = await File.findOne({ customAlias: req.params.identifier });
-    if (!file) return res.status(404).json({ message: 'File not found.' });
-    file.reports.push({ reason: category ? `${category}: ${reason}` : reason });
-    await file.save();
-    res.status(200).json({ message: 'Report submitted.' });
-});
 router.post('/files/:id/import', auth.protectApi, async (req, res) => {
     try {
         const originalFile = await File.findOne({ _id: req.params.id });
@@ -662,6 +797,15 @@ router.post('/files/:id/scan', async (req, res) => {
         }
         res.status(500).json({ message: 'Scan failed' });
     }
+});
+
+router.post('/report/:identifier', async (req, res) => {
+    const { reason, category } = req.body;
+    const file = await File.findOne({ customAlias: req.params.identifier });
+    if (!file) return res.status(404).json({ message: 'File not found.' });
+    file.reports.push({ reason: category ? `${category}: ${reason}` : reason });
+    await file.save();
+    res.status(200).json({ message: 'Report submitted.' });
 });
 
 module.exports = router;

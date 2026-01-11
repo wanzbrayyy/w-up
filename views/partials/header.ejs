@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Security: CSRF Token -->
+    <meta name="csrf-token" content="<%= csrfToken %>">
+    
     <title><%= typeof title !== 'undefined' ? `${title} - w upload` : 'w upload' %></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/public/css/main.css">
@@ -11,7 +14,6 @@
     <% } %>
 </head>
 <body>
-    <!-- Global Announcement Bar -->
     <% if (locals.systemConfig && locals.systemConfig.globalAnnouncement) { %>
         <div class="announcement-bar" style="background:#f59e0b; color:black; text-align:center; padding:0.5rem; font-weight:bold;">
             <i class="fa-solid fa-bullhorn"></i> <%= locals.systemConfig.globalAnnouncement %>
@@ -61,7 +63,6 @@
         </div>
     </nav>
 
-    <!-- Ads Slot (Jika diaktifkan) -->
     <% if (locals.systemConfig && locals.systemConfig.adsEnabled && (!locals.user || locals.user.plan === 'free')) { %>
         <div class="ad-container" style="text-align:center; padding:1rem; background:var(--bg-secondary);">
             <small>Advertisement</small>

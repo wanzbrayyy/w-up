@@ -24,12 +24,46 @@
             setTimeout(() => toast.remove(), 4000);
         }
 
+        // --- GLOBAL CSRF PATCH FOR FETCH ---
+        const originalFetch = window.fetch;
+        window.fetch = async function (url, options = {}) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+                if (!options.headers) options.headers = {};
+                
+                // Cek apakah headers adalah instance Headers atau object biasa
+                if (options.headers instanceof Headers) {
+                    options.headers.append('X-CSRF-Token', csrfToken);
+                } else {
+                    options.headers['X-CSRF-Token'] = csrfToken;
+                }
+            }
+            return originalFetch(url, options);
+        };
+
+        // --- GLOBAL CSRF PATCH FOR XHR (Untuk Progress Bar Upload) ---
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this._method = method;
+            return originalOpen.apply(this, arguments);
+        };
+
+        const originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(body) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (csrfToken && this._method && ['POST', 'PUT', 'DELETE'].includes(this._method.toUpperCase())) {
+                this.setRequestHeader('X-CSRF-Token', csrfToken);
+            }
+            return originalSend.apply(this, arguments);
+        };
+
         document.addEventListener('DOMContentLoaded', () => {
             initializeTheme();
 
             const menuToggle = document.getElementById('mobileMenuToggle');
             const navMenu = document.getElementById('navMenu');
-            const toggleIcon = menuToggle.querySelector('i');
+            const toggleIcon = menuToggle?.querySelector('i');
 
             if (menuToggle) {
                 menuToggle.addEventListener('click', () => {

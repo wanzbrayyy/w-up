@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const geoip = require('geoip-lite');
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
@@ -18,7 +19,6 @@ router.get('/docs', auth.checkAuthStatus, (req, res) => {
     res.render('docs');
 });
 
-// --- Public Profile ---
 router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
     try {
         const targetUser = await User.findOne({ username: req.params.username, isPublicProfile: true });
@@ -42,7 +42,6 @@ router.get('/req/:slug', auth.checkAuthStatus, async (req, res) => {
         res.render('file_request', { request });
     } catch (e) { res.status(500).send('Error'); }
 });
-
 
 router.get('/dashboard/teams', auth.protectView, async (req, res) => {
     try {
@@ -71,9 +70,7 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
         let currentFolder = null;
         let breadcrumbs = [];
 
-        // 1. Logika Folder & Breadcrumbs
         if (folderId) {
-            // Cek apakah folder ada dan user punya akses (Owner ATAU Collaborator)
             currentFolder = await File.findOne({ 
                 _id: folderId,
                 $or: [{ owner: req.user.id }, { collaborators: req.user.id }]
@@ -83,12 +80,8 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
                 return res.status(404).send("Folder not found or access denied.");
             }
 
-            // PERBAIKAN UTAMA: Jika user punya akses ke folder ini,
-            // dia berhak melihat SEMUA isi folder tersebut (parentId match),
-            // tidak peduli siapa yang upload filenya.
             query = { parentId: folderId, deletedAt: null };
 
-            // Buat Breadcrumbs
             let temp = currentFolder;
             while(temp) {
                 breadcrumbs.unshift({ id: temp._id, name: temp.originalName });
@@ -96,16 +89,13 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
                 else temp = null;
             }
         } else {
-            // Jika di Root (Bukan dalam folder)
             if (filter === 'trash') {
                 query = { owner: req.user.id, deletedAt: { $ne: null } };
             } else if (filter === 'shared') {
-                // Tampilkan file/folder yang dishare KE user ini
                 query = { collaborators: req.user.id, deletedAt: null };
             } else if (filter === 'starred') {
                 query = { owner: req.user.id, isStarred: true, deletedAt: null };
             } else {
-                // Default: File milik sendiri di root
                 query = { 
                     owner: req.user.id,
                     parentId: null, 
@@ -114,9 +104,7 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
             }
         }
 
-        // 2. Filter Pencarian & Tipe (Menimpa parentId jika search global)
         if (q) {
-            // Search mencari di seluruh file milik user/shared, mengabaikan folder saat ini
             query = {
                 $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
                 deletedAt: null,
@@ -136,12 +124,10 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
 
         if (tag) query.tags = tag;
 
-        // 3. Sorting
         let sort = {};
         if (sortBy) sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
         else sort = { isFolder: -1, createdAt: -1 };
 
-        // 4. Eksekusi
         const files = await File.find(query).sort(sort).select('-base64 -versions.base64');
         
         res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
@@ -151,16 +137,14 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
     }
 });
 
-// --- DOWNLOAD VIEW LOGIC (DIPERBAIKI UNTUK FOLDER) ---
 router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier })
-            .select('-base64') // Jangan load base64 berat
+            .select('-base64')
             .populate('comments.user', 'username');
             
         if (!file || file.deletedAt) return res.status(404).render('404');
 
-        // Check Password
         if (file.password) {
             const token = req.cookies[`file_access_${file._id}`];
             if (!token) return res.render('password_prompt', { file, hint: file.passwordHint });
@@ -171,7 +155,6 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
             }
         }
         
-        // Jika file adalah FOLDER -> Arahkan link download ke endpoint ZIP
         let downloadLink;
         if (file.isFolder) {
             downloadLink = `/api/files/${file._id}/zip`;
@@ -179,12 +162,12 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
             downloadLink = `/w-upload/raw/${file.customAlias}`;
         }
 
-        // Jika file teks/coding -> Render Viewer
-        if (!file.isFolder && file.originalName.match(/\.(js|css|html|php|vue|dart|json|py|java|c|cpp|xml|ts|jsx|md|txt)$/i)) {
+        const viewerExtensions = /\.(js|css|html|php|py|java|c|cpp|xml|ts|jsx|md|txt|json|sql|rb|go|rs|zip|rar|pdf|docx|doc|xlsx|xls|pptx|ppt|mp4|webm|jpg|jpeg|png|gif|webp)$/i;
+
+        if (!file.isFolder && file.originalName.match(viewerExtensions)) {
             return res.render('viewer', { file, downloadLink });
         }
 
-        // Render Halaman Download standar
         res.render('download', { file, downloadLink });
     } catch (error) {
         console.error(error);
@@ -206,21 +189,17 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
     }
 });
 
-// --- RAW DOWNLOAD (FILE ONLY) ---
 router.get('/w-upload/raw/:identifier', async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
         if (!file || file.deletedAt) return res.status(404).send('File not found');
         if (file.isFolder) return res.status(400).send('Cannot raw download a folder. Use zip.');
 
-        // Geo Fencing Check (Simple)
         if (file.allowedGeo && file.allowedGeo.lat) {
             const ip = req.ip || req.socket.remoteAddress;
             const geo = geoip.lookup(ip);
-            // Logika geo strict bisa ditambahkan disini
         }
 
-        // Expiration Logic
         if (file.expiresAt && file.expiresAt < new Date()) {
             file.deletedAt = new Date();
             await file.save();
@@ -256,13 +235,42 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
 
         await file.save();
 
-        const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
-        res.writeHead(200, {
-            'Content-Type': file.contentType,
-            'Content-Length': fileBuffer.length,
-            'Content-Disposition': `inline; filename="${file.originalName}"`
-        });
-        res.end(fileBuffer);
+        if (file.storageType === 'r2' && file.r2Key) {
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: process.env.R2_BUCKET_NAME,
+                    Key: file.r2Key
+                });
+                const response = await r2.send(command);
+
+                res.setHeader('Content-Type', file.contentType);
+                res.setHeader('Content-Length', file.size);
+                res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
+
+                response.Body.pipe(res);
+
+                if (file.isBurnAfterRead) {
+                    r2.send(new DeleteObjectCommand({ 
+                        Bucket: process.env.R2_BUCKET_NAME, 
+                        Key: file.r2Key 
+                    })).catch(err => console.error('R2 Delete Error:', err));
+                }
+            } catch (r2Error) {
+                console.error("R2 Error:", r2Error);
+                return res.status(500).send("Error retrieving file from cloud storage.");
+            }
+        } else if (file.base64) {
+            const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
+            res.writeHead(200, {
+                'Content-Type': file.contentType,
+                'Content-Length': fileBuffer.length,
+                'Content-Disposition': `inline; filename="${file.originalName}"`
+            });
+            res.end(fileBuffer);
+        } else {
+            res.status(500).send("File content missing.");
+        }
+
     } catch (error) {
         console.error(error);
         res.status(500).send('Server Error');
