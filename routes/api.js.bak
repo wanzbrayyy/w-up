@@ -724,7 +724,7 @@ router.post('/report/:identifier', async (req, res) => {
 
 router.post('/profile/passkey/register-options', auth.protectApi, async (req, res) => {
     try {
-        const user = req.user;
+        const user = await User.findById(req.user.id);
         if (!user) {
             return res.status(401).json({ error: "User not authenticated." });
         }
@@ -739,9 +739,7 @@ router.post('/profile/passkey/register-options', auth.protectApi, async (req, re
 
 router.post('/profile/passkey/verify-registration', auth.protectApi, async (req, res) => {
     const body = req.body;
-
     try {
-        // Ambil data user TERBARU dari database untuk mendapatkan challenge yang paling update
         const user = await User.findById(req.user.id);
         if (!user) {
             return res.status(401).json({ error: "User not authenticated." });
@@ -754,6 +752,7 @@ router.post('/profile/passkey/verify-registration', auth.protectApi, async (req,
         res.status(400).json({ error: error.message });
     }
 });
+
 router.delete('/profile/passkey/:id', auth.protectApi, async (req, res) => {
     try {
         const credentialIdBase64 = req.params.id;
