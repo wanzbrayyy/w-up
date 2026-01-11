@@ -82,3 +82,47 @@
     text-decoration: none;
     font-weight: 500;
 }
+    .btn-passkey {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 0.875rem;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        background: var(--text);
+        color: var(--card);
+        border: 1px solid var(--text);
+        transition: all 0.2s;
+        margin-bottom: 1rem;
+    }
+    [data-theme="dark"] .btn-passkey {
+        background: var(--card);
+        color: var(--text);
+        border-color: var(--border);
+    }
+    .btn-passkey:hover {
+        transform: translateY(-2px);
+    }
+    .btn-passkey i {
+        font-size: 1.2rem;
+    }
+    .divider {
+        text-align: center;
+        color: var(--muted-text);
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+    .form-error {
+        background: #fee2e2;
+        color: #b91c1c;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        text-align: center;
+        border: 1px solid #fecaca;
+    }

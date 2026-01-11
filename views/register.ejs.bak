@@ -48,6 +48,7 @@
 </main>
 
 <style>
+    /* Inline styles for specific Auth tweaks if main CSS is missing specifics */
     .input-wrapper { position: relative; }
     .input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--muted-text); }
     .auth-form input { width: 100%; padding: 0.8rem 1rem 0.8rem 2.8rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text); transition: all 0.2s; }
@@ -62,6 +63,7 @@
     const errorBox = document.getElementById('formError');
     const submitBtn = document.getElementById('submitBtn');
 
+    // Auto-fill referral from URL query ?ref=CODE
     const urlParams = new URLSearchParams(window.location.search);
     const refParam = urlParams.get('ref');
     if(refParam) document.getElementById('referralCode').value = refParam;
@@ -79,7 +81,7 @@
         };
 
         try {
-            const response = await fetch('/api/auth/register', {
+            const response = await fetch('/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -88,11 +90,10 @@
             const data = await response.json();
 
             if (response.ok) {
-                if (typeof showToast === 'function') {
-                    showToast('Registration successful! Redirecting...', 'success');
-                }
+                showToast('Registration successful! Redirecting...', 'success');
                 setTimeout(() => window.location.href = '/login', 1500);
             } else {
+                // Handle specific errors like Rate Limit (429)
                 errorBox.textContent = data.message || 'Registration failed.';
                 errorBox.style.display = 'block';
                 submitBtn.disabled = false;
