@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const geoip = require('geoip-lite');
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
@@ -12,34 +13,7 @@ const auth = require('../middleware/auth');
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
 router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login'));
 router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
-
-router.get('/profile', auth.protectView, async (req, res) => {
-    try {
-        // Real-time Aggregation: Hitung total size dari file aktif
-        const stats = await File.aggregate([
-            { $match: { owner: req.user._id, deletedAt: null } },
-            { $group: { _id: null, totalSize: { $sum: "$size" } } }
-        ]);
-
-        const currentUsage = stats.length > 0 ? stats[0].totalSize : 0;
-        
-        // Update data user agar sinkron
-        req.user.storageUsed = currentUsage;
-        
-        // Pastikan limit sesuai plan (Reset limit jika plan berubah)
-        if (req.user.plan === 'pro') {
-            req.user.storageLimit = 50 * 1024 * 1024 * 1024; // 50GB
-        } else {
-            req.user.storageLimit = 1 * 1024 * 1024 * 1024; // 1GB
-        }
-        
-        await req.user.save();
-
-        res.render('profile', { user: req.user });
-    } catch (e) {
-        res.status(500).send("Error loading profile");
-    }
-});
+router.get('/profile', auth.protectView, (req, res) => res.render('profile'));
 
 router.get('/docs', auth.checkAuthStatus, (req, res) => {
     res.render('docs');
@@ -158,6 +132,7 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
         
         res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Error fetching user files.");
     }
 });
@@ -195,6 +170,7 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
 
         res.render('download', { file, downloadLink });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Server Error");
     }
 });
@@ -259,14 +235,44 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
 
         await file.save();
 
-        const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
-        res.writeHead(200, {
-            'Content-Type': file.contentType,
-            'Content-Length': fileBuffer.length,
-            'Content-Disposition': `inline; filename="${file.originalName}"`
-        });
-        res.end(fileBuffer);
+        if (file.storageType === 'r2' && file.r2Key) {
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: "wanzofc",
+                    Key: file.r2Key
+                });
+                const response = await r2.send(command);
+
+                res.setHeader('Content-Type', file.contentType);
+                res.setHeader('Content-Length', file.size);
+                res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
+
+                response.Body.pipe(res);
+
+                if (file.isBurnAfterRead) {
+                    r2.send(new DeleteObjectCommand({ 
+                        Bucket: "wanzofc", 
+                        Key: file.r2Key 
+                    })).catch(err => console.error('R2 Delete Error:', err));
+                }
+            } catch (r2Error) {
+                console.error("R2 Error:", r2Error);
+                return res.status(500).send("Error retrieving file from cloud storage.");
+            }
+        } else if (file.base64) {
+            const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
+            res.writeHead(200, {
+                'Content-Type': file.contentType,
+                'Content-Length': fileBuffer.length,
+                'Content-Disposition': `inline; filename="${file.originalName}"`
+            });
+            res.end(fileBuffer);
+        } else {
+            res.status(500).send("File content missing.");
+        }
+
     } catch (error) {
+        console.error(error);
         res.status(500).send('Server Error');
     }
 });
