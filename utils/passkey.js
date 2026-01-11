@@ -35,8 +35,9 @@ async function generatePasskeyRegistrationOptions(user) {
             attestationType: 'none',
             excludeCredentials: existingCredentials,
             authenticatorSelection: {
-                residentKey: 'preferred',
+                residentKey: 'required',
                 userVerification: 'required',
+                requireResidentKey: true,
             },
         });
 
@@ -60,21 +61,34 @@ async function verifyPasskeyRegistration(user, response) {
             requireUserVerification: true,
         });
 
-        if (verification.verified && verification.registrationInfo) {
-            const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
+        if (verification.verified) {
+            const { registrationInfo } = verification;
+
+            if (!registrationInfo) {
+                throw new Error('Verification succeeded, but registration information was missing.');
+            }
+
+            const { credentialPublicKey, credentialID, counter, transports } = registrationInfo;
 
             if (!credentialID || !credentialPublicKey) {
                 throw new Error('Internal Error: Credential data is missing after successful verification.');
             }
 
-            const existingKey = user.passkeys.find(key => key.credentialID.equals(credentialID));
+            const bufferID = Buffer.from(credentialID);
+            const bufferPublicKey = Buffer.from(credentialPublicKey);
+
+            const existingKey = user.passkeys.find(key => {
+                const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
+                return storedID.equals(bufferID);
+            });
+
             if (existingKey) {
                 throw new Error('This passkey is already registered.');
             }
 
             user.passkeys.push({
-                credentialID: Buffer.from(credentialID),
-                credentialPublicKey: Buffer.from(credentialPublicKey),
+                credentialID: bufferID,
+                credentialPublicKey: bufferPublicKey,
                 counter,
                 transports: transports || [],
             });
@@ -82,7 +96,7 @@ async function verifyPasskeyRegistration(user, response) {
             user.currentChallenge = undefined;
             await user.save();
         } else {
-            throw new Error('Passkey verification failed. Please try registering again.');
+            throw new Error('Passkey verification failed. Signature may be invalid or challenge mismatched.');
         }
 
         return verification;
@@ -120,7 +134,13 @@ async function generatePasskeyLoginOptions(user) {
 
 async function verifyPasskeyLogin(user, response) {
     try {
-        const credential = user.passkeys.find(key => key.credentialID.equals(Buffer.from(response.rawId, 'base64')));
+        const responseIdBuffer = Buffer.from(response.id, 'base64');
+        
+        const credential = user.passkeys.find(key => {
+            const storedID = Buffer.isBuffer(key.credentialID) ? key.credentialID : Buffer.from(key.credentialID);
+            return storedID.equals(responseIdBuffer);
+        });
+
         if (!credential) {
             throw new Error('Passkey not found on this account.');
         }
@@ -140,9 +160,7 @@ async function verifyPasskeyLogin(user, response) {
         });
 
         if (verification.verified) {
-            const { newCounter } = verification.authenticationInfo;
-            credential.counter = newCounter;
-            
+            credential.counter = verification.authenticationInfo.newCounter;
             user.currentChallenge = undefined;
             await user.save();
         }

@@ -35,9 +35,8 @@ async function generatePasskeyRegistrationOptions(user) {
             attestationType: 'none',
             excludeCredentials: existingCredentials,
             authenticatorSelection: {
-                residentKey: 'required',
+                residentKey: 'preferred',
                 userVerification: 'required',
-                requireResidentKey: true,
             },
         });
 
@@ -61,11 +60,7 @@ async function verifyPasskeyRegistration(user, response) {
             requireUserVerification: true,
         });
 
-        if (verification.verified) {
-            if (!verification.registrationInfo) {
-                throw new Error('Verification succeeded, but registration information was missing.');
-            }
-
+        if (verification.verified && verification.registrationInfo) {
             const { credentialPublicKey, credentialID, counter, transports } = verification.registrationInfo;
 
             if (!credentialID || !credentialPublicKey) {
@@ -87,7 +82,7 @@ async function verifyPasskeyRegistration(user, response) {
             user.currentChallenge = undefined;
             await user.save();
         } else {
-            throw new Error('Passkey verification failed. Signature may be invalid or challenge mismatched.');
+            throw new Error('Passkey verification failed. Please try registering again.');
         }
 
         return verification;
