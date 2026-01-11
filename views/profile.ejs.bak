@@ -1,4 +1,4 @@
-<%- include('partials/header', { title: 'Account Settings', pageCss: 'dashboard' }) %>
+<%- include('partials/header', { title: 'Account Settings', pageCss: 'profile' }) %>
 
 <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 
@@ -7,18 +7,17 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content">
-        <section class="action-bar">
-            <div class="left-actions">
-                <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
-                <h1 style="font-size: 1.5rem; margin: 0;">Account Settings</h1>
-            </div>
-        </section>
-
         <div class="profile-container">
+            <section class="action-bar">
+                <div class="left-actions">
+                    <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <h1 style="font-size: 1.5rem; margin: 0;">Account Settings</h1>
+                </div>
+            </section>
+
             <div class="settings-grid">
-                
                 <div class="settings-col">
                     <section class="settings-card">
                         <div class="card-header">
@@ -33,13 +32,11 @@
                                 <label>Bio</label>
                                 <textarea id="publicBio" class="full-input" rows="3" placeholder="Tell something about yourself..."><%= user.publicBio || '' %></textarea>
                             </div>
-                            <div class="form-row">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="publicProfileToggle" <%= user.isPublicProfile ? 'checked' : '' %>>
-                                    <span class="slider"></span>
-                                    <span class="label-text">Enable Public Profile</span>
-                                </label>
-                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="publicProfileToggle" <%= user.isPublicProfile ? 'checked' : '' %>>
+                                <span class="slider"></span>
+                                <span class="label-text">Enable Public Profile</span>
+                            </label>
                             <div class="form-actions">
                                 <a href="/u/<%= user.username %>" target="_blank" class="btn secondary-btn">View Profile</a>
                                 <button id="saveProfileBtn" class="btn primary-btn">Save Changes</button>
@@ -60,7 +57,7 @@
                                 </div>
                             </div>
                             
-                            <div class="stats-row" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
+                            <div style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
                                 <% 
                                     const totalLimit = user.storageLimit + (user.storageBonus || 0);
                                     const used = user.storageUsed || 0;
@@ -68,20 +65,18 @@
                                     const isFull = percentage >= 90;
                                 %>
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
-                                    <span class="stat-label">
-                                        Storage Usage (<%= user.plan.toUpperCase() %>)
-                                    </span>
-                                    <span class="stat-value" style="font-weight:bold; <%= isFull ? 'color:red;' : '' %>">
+                                    <span class="stat-label">Storage Usage (<%= user.plan.toUpperCase() %>)</span>
+                                    <span class="stat-value" style="<%= isFull ? 'color:#ef4444;' : '' %>">
                                         <%= (used / 1024 / 1024).toFixed(2) %> MB / 
                                         <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB
                                     </span>
                                 </div>
-                                <div class="progress-bar" style="height:12px; background:var(--bg-secondary); border-radius:6px; overflow:hidden; border:1px solid var(--border);">
-                                    <div class="fill" style="width:<%= percentage %>%; background:<%= isFull ? '#ef4444' : 'var(--primary)' %>; height:100%; transition: width 0.5s ease;"></div>
+                                <div style="height:10px; background:var(--bg-secondary); border-radius:5px; overflow:hidden;">
+                                    <div style="width:<%= percentage %>%; background:<%= isFull ? '#ef4444' : 'var(--primary)' %>; height:100%; transition: width 0.3s ease;"></div>
                                 </div>
                                 
                                 <% if(user.plan === 'free') { %>
-                                    <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem; background: linear-gradient(45deg, #f59e0b, #d97706); border:none;">
+                                    <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem;">
                                         <i class="fa-solid fa-crown"></i> Upgrade to PRO
                                     </button>
                                 <% } %>
@@ -105,6 +100,7 @@
                                     <%= user.isTwoFactorEnabled ? 'Enabled' : 'Disabled' %>
                                 </span>
                             </div>
+                            
                             <% if (!user.isTwoFactorEnabled) { %>
                                 <button id="setup2faBtn" class="btn secondary-btn" style="width:100%">Setup 2FA</button>
                                 <div id="2faSetupArea" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:1rem;">
@@ -119,24 +115,26 @@
                                 </div>
                             <% } %>
 
-                            <div class="security-item passkey-section" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
-                                <div class="security-info">
-                                    <strong>Passkeys (Biometric Login)</strong>
-                                    <p>Log in with Face ID or fingerprint.</p>
+                            <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+                                <div class="passkey-section">
+                                    <div class="security-info">
+                                        <strong>Passkeys</strong>
+                                        <p>Log in with Face ID or fingerprint.</p>
+                                    </div>
+                                    <button id="addPasskeyBtn" class="btn primary-btn"><i class="fa-solid fa-plus"></i> Add</button>
                                 </div>
-                                <button id="addPasskeyBtn" class="btn primary-btn"><i class="fa-solid fa-plus"></i> Add</button>
-                            </div>
-                            <div id="passkeyList">
-                                <% if(user.passkeys && user.passkeys.length > 0) { %>
-                                    <% user.passkeys.forEach(key => { %>
-                                        <div class="passkey-item">
-                                            <span><i class="fa-solid fa-fingerprint"></i> Registered Device</span>
-                                            <button onclick="removePasskey('<%= key.credentialID.toString('base64') %>')" class="btn danger-btn-sm"><i class="fa-solid fa-trash"></i></button>
-                                        </div>
-                                    <% }) %>
-                                <% } else { %>
-                                    <p class="text-muted" style="text-align:center; padding:1rem;">No passkeys registered.</p>
-                                <% } %>
+                                <div id="passkeyList">
+                                    <% if(user.passkeys && user.passkeys.length > 0) { %>
+                                        <% user.passkeys.forEach(key => { %>
+                                            <div class="passkey-item">
+                                                <span><i class="fa-solid fa-fingerprint"></i> Passkey (<%= new Date().toLocaleDateString() %>)</span>
+                                                <button onclick="removePasskey('<%= key.credentialID.toString('base64url') %>')" class="btn danger-btn-sm"><i class="fa-solid fa-trash"></i></button>
+                                            </div>
+                                        <% }) %>
+                                    <% } else { %>
+                                        <p style="text-align:center; padding:1rem; color:var(--text-muted); font-size:0.9rem;">No passkeys registered.</p>
+                                    <% } %>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -156,7 +154,9 @@
                                         <div class="session-info">
                                             <div class="session-title">
                                                 <%= session.os %> - <%= session.browser %>
-                                                <% if(session.deviceId === 'current') { %> <span class="badge current">Current</span> <% } %>
+                                                <% if(session.deviceId === 'current' || session.refreshToken === currentRefreshToken) { %> 
+                                                    <span class="badge current">Current</span> 
+                                                <% } %>
                                             </div>
                                             <div class="session-meta">
                                                 <%= session.ip %> &bull; <%= session.location || 'Unknown' %> &bull; <%= new Date(session.lastActive).toLocaleDateString() %>
@@ -173,6 +173,7 @@
         </div>
     </main>
 </div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const { startRegistration } = SimpleWebAuthnBrowser;
@@ -182,33 +183,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarOverlay = document.getElementById('sidebarOverlay');
     const closeSidebarBtn = document.getElementById('closeSidebarBtn');
 
-    function toggleSidebar() { sidebar.classList.toggle('active'); sidebarOverlay.classList.toggle('active'); }
+    function toggleSidebar() { 
+        if(sidebar) sidebar.classList.toggle('active'); 
+        if(sidebarOverlay) sidebarOverlay.classList.toggle('active'); 
+    }
+    
     if(sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
     if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
     if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
 
-    document.getElementById('saveProfileBtn').addEventListener('click', async () => {
-        const publicBio = document.getElementById('publicBio').value;
-        const isPublicProfile = document.getElementById('publicProfileToggle').checked;
-        const res = await fetch('/api/profile/settings', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ publicBio, isPublicProfile })
+    const saveProfileBtn = document.getElementById('saveProfileBtn');
+    if(saveProfileBtn) {
+        saveProfileBtn.addEventListener('click', async () => {
+            const publicBio = document.getElementById('publicBio').value;
+            const isPublicProfile = document.getElementById('publicProfileToggle').checked;
+            
+            try {
+                const res = await fetch('/api/profile/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ publicBio, isPublicProfile })
+                });
+                if(res.ok) showToast('Profile updated', 'success');
+                else showToast('Update failed', 'error');
+            } catch(e) {
+                showToast('Network error', 'error');
+            }
         });
-        if(res.ok) showToast('Profile updated', 'success');
-        else showToast('Update failed', 'error');
-    });
+    }
 
     const setup2faBtn = document.getElementById('setup2faBtn');
     if(setup2faBtn) {
         setup2faBtn.addEventListener('click', async () => {
-            const res = await fetch('/api/profile/2fa/setup', { method: 'POST' });
-            const data = await res.json();
-            if(res.ok) {
-                document.getElementById('qrCodeContainer').innerHTML = `<img src="${data.qrCodeUrl}" style="max-width:150px">`;
-                document.getElementById('secretCode').textContent = data.secret;
-                document.getElementById('2faSetupArea').style.display = 'block';
-                setup2faBtn.style.display = 'none';
+            try {
+                const res = await fetch('/api/profile/2fa/setup', { method: 'POST' });
+                const data = await res.json();
+                if(res.ok) {
+                    document.getElementById('qrCodeContainer').innerHTML = `<img src="${data.qrCodeUrl}" style="max-width:150px">`;
+                    document.getElementById('secretCode').textContent = data.secret;
+                    document.getElementById('2faSetupArea').style.display = 'block';
+                    setup2faBtn.style.display = 'none';
+                }
+            } catch(e) {
+                showToast('Failed to setup 2FA', 'error');
             }
         });
     }
@@ -218,72 +235,108 @@ document.addEventListener('DOMContentLoaded', () => {
         verify2faForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const token = document.getElementById('2faTokenInput').value;
-            const res = await fetch('/api/profile/2fa/verify', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ token })
-            });
-            if(res.ok) { showToast('2FA Enabled!', 'success'); setTimeout(() => location.reload(), 1000); }
-            else showToast('Invalid Code', 'error');
+            try {
+                const res = await fetch('/api/profile/2fa/verify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ token })
+                });
+                if(res.ok) { 
+                    showToast('2FA Enabled!', 'success'); 
+                    setTimeout(() => location.reload(), 1000); 
+                } else { 
+                    showToast('Invalid Code', 'error'); 
+                }
+            } catch(e) {
+                showToast('Verification failed', 'error');
+            }
         });
     }
 
-    document.getElementById('addPasskeyBtn').addEventListener('click', async () => {
-        try {
-            const resp = await fetch('/api/profile/passkey/register-options', { method: 'POST' });
-            const options = await resp.json();
-            const attResp = await startRegistration(options);
-            const verificationResp = await fetch('/api/profile/passkey/verify-registration', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(attResp),
-            });
-            const verificationJSON = await verificationResp.json();
-            if (verificationJSON && verificationJSON.verified) {
-                showToast('Passkey registered successfully!', 'success');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                showToast('Registration failed: ' + (verificationJSON.error || 'Unknown error'), 'error');
+    const addPasskeyBtn = document.getElementById('addPasskeyBtn');
+    if(addPasskeyBtn) {
+        addPasskeyBtn.addEventListener('click', async () => {
+            try {
+                const resp = await fetch('/api/profile/passkey/register-options', { method: 'POST' });
+                if(!resp.ok) throw new Error('Failed to get options');
+                
+                const options = await resp.json();
+                const attResp = await startRegistration(options);
+                
+                const verificationResp = await fetch('/api/profile/passkey/verify-registration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(attResp),
+                });
+                
+                const verificationJSON = await verificationResp.json();
+                if (verificationJSON && verificationJSON.verified) {
+                    showToast('Passkey registered successfully!', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showToast('Registration failed', 'error');
+                }
+            } catch (error) {
+                showToast('Could not create passkey', 'error');
+                console.error(error);
             }
-        } catch (error) {
-            showToast('Could not create passkey: ' + error, 'error');
-        }
-    });
+        });
+    }
 
     window.removePasskey = async (id) => {
         if (!confirm('Remove this passkey?')) return;
-        const res = await fetch(`/api/profile/passkey/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-            showToast('Passkey removed.', 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast('Failed to remove passkey.', 'error');
+        try {
+            const res = await fetch(`/api/profile/passkey/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('Passkey removed.', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Failed to remove passkey.', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
         }
     };
 
     window.revokeSession = async (deviceId) => {
         if(!confirm('Log out this device?')) return;
-        const res = await fetch(`/api/profile/devices/${deviceId}`, { method: 'DELETE' });
-        if(res.ok) location.reload();
+        try {
+            const res = await fetch(`/api/profile/devices/${deviceId}`, { method: 'DELETE' });
+            if(res.ok) location.reload();
+        } catch(e) {}
     };
 
-    document.getElementById('logoutAllBtn').addEventListener('click', async () => {
-        if(!confirm('Log out all OTHER devices?')) return;
-        const res = await fetch('/api/profile/devices', { method: 'DELETE' });
-        if(res.ok) location.reload();
-    });
+    const logoutAllBtn = document.getElementById('logoutAllBtn');
+    if(logoutAllBtn) {
+        logoutAllBtn.addEventListener('click', async () => {
+            if(!confirm('Log out all OTHER devices?')) return;
+            try {
+                const res = await fetch('/api/profile/devices', { method: 'DELETE' });
+                if(res.ok) location.reload();
+            } catch(e) {}
+        });
+    }
 
     window.copyRef = () => {
-        navigator.clipboard.writeText(document.getElementById('refCode').innerText);
+        const code = document.getElementById('refCode').innerText;
+        navigator.clipboard.writeText(code);
         showToast('Code copied!', 'success');
     };
 
-    document.getElementById('upgradeBtn')?.addEventListener('click', async () => {
-        if(!confirm('Upgrade to Pro plan? (Simulation)')) return;
-        const res = await fetch('/billing/upgrade', { method: 'POST' });
-        const data = await res.json();
-        if(res.ok) { showToast(data.message, 'success'); setTimeout(() => location.reload(), 1000); }
-    });
+    const upgradeBtn = document.getElementById('upgradeBtn');
+    if(upgradeBtn) {
+        upgradeBtn.addEventListener('click', async () => {
+            if(!confirm('Upgrade to Pro plan? (Simulation)')) return;
+            try {
+                const res = await fetch('/billing/upgrade', { method: 'POST' });
+                const data = await res.json();
+                if(res.ok) { 
+                    showToast(data.message, 'success'); 
+                    setTimeout(() => location.reload(), 1000); 
+                }
+            } catch(e) {}
+        });
+    }
 });
 </script>
 
