@@ -2,18 +2,28 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const geoip = require('geoip-lite');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const auth = require('../middleware/auth');
-const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2'); // Pastikan import ini ada
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
-router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login'));
-router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
-router.get('/profile', auth.protectView, (req, res) => res.render('profile'));
+
+router.get('/login', auth.checkAuthStatus, (req, res) => 
+    res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login')
+);
+
+router.get('/register', auth.checkAuthStatus, (req, res) => 
+    res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register')
+);
+
+// FIX: Mengirim currentRefreshToken ke view profile.ejs
+router.get('/profile', auth.protectView, (req, res) => {
+    const currentRefreshToken = req.cookies.refresh_token || '';
+    res.render('profile', { currentRefreshToken });
+});
 
 router.get('/docs', auth.checkAuthStatus, (req, res) => {
     res.render('docs');
@@ -130,7 +140,6 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
 
         const files = await File.find(query).sort(sort).select('-base64 -versions.base64');
         
-        // Stats Aggregation untuk Sidebar Profile
         const stats = await File.aggregate([
             { $match: { owner: req.user._id, deletedAt: null } },
             { $group: { _id: null, totalSize: { $sum: "$size" } } }
@@ -198,7 +207,6 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
     }
 });
 
-// --- PERBAIKAN RAW DOWNLOAD (R2 STREAMING) ---
 router.get('/w-upload/raw/:identifier', async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
@@ -207,7 +215,6 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
         if (file.deletedAt) return res.status(410).send('File has been deleted.');
         if (file.isFolder) return res.status(400).send('Cannot raw download a folder. Use zip.');
 
-        // 1. Security Checks
         if (file.expiresAt && file.expiresAt < new Date()) {
             file.deletedAt = new Date();
             await file.save();
@@ -230,7 +237,6 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
             }
         }
 
-        // 2. Update Stats
         if (file.downloadLimit !== undefined) file.downloadLimit -= 1;
         file.downloads += 1;
         file.lastDownloadedAt = new Date();
@@ -242,7 +248,6 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
         if (file.isBurnAfterRead) file.deletedAt = new Date();
         await file.save();
 
-        // 3. Serve File (R2 vs MongoDB)
         if (file.storageType === 'r2' && file.r2Key) {
             try {
                 const command = new GetObjectCommand({
@@ -252,15 +257,12 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
                 
                 const response = await r2.send(command);
 
-                // Set Headers
                 res.setHeader('Content-Type', file.contentType);
                 res.setHeader('Content-Length', file.size);
                 res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
 
-                // Pipe R2 Stream ke Express Response
                 response.Body.pipe(res);
 
-                // Hapus file fisik di R2 jika Burn After Read aktif
                 if (file.isBurnAfterRead) {
                     await r2.send(new DeleteObjectCommand({ 
                         Bucket: process.env.R2_BUCKET_NAME, 
@@ -269,11 +271,10 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
                 }
             } catch (r2Error) {
                 console.error("Cloudflare R2 Error:", r2Error);
-                return res.status(500).send("Error retrieving file from Cloud Storage. Please verify credentials/bucket.");
+                return res.status(500).send("Error retrieving file from Cloud Storage.");
             }
         } 
         else if (file.base64) {
-            // Fallback ke MongoDB Base64 (Untuk file lama)
             const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
             res.writeHead(200, {
                 'Content-Type': file.contentType,

@@ -8,38 +8,12 @@ const User = require('../models/user');
 const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const auth = require('../middleware/auth');
-const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
+const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2'); // Pastikan import ini ada
+
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
 router.get('/login', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('login'));
 router.get('/register', auth.checkAuthStatus, (req, res) => res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register'));
-
-router.get('/profile', auth.protectView, async (req, res) => {
-    try {
-        // Real-time Aggregation: Hitung total size dari file aktif
-        const stats = await File.aggregate([
-            { $match: { owner: req.user._id, deletedAt: null } },
-            { $group: { _id: null, totalSize: { $sum: "$size" } } }
-        ]);
-
-        const currentUsage = stats.length > 0 ? stats[0].totalSize : 0;
-        
-        // Update data user agar sinkron
-        req.user.storageUsed = currentUsage;
-        
-        // Pastikan limit sesuai plan (Reset limit jika plan berubah)
-        if (req.user.plan === 'pro') {
-            req.user.storageLimit = 50 * 1024 * 1024 * 1024; // 50GB
-        } else {
-            req.user.storageLimit = 1 * 1024 * 1024 * 1024; // 1GB
-        }
-        
-        await req.user.save();
-
-        res.render('profile', { user: req.user });
-    } catch (e) {
-        res.status(500).send("Error loading profile");
-    }
-});
+router.get('/profile', auth.protectView, (req, res) => res.render('profile'));
 
 router.get('/docs', auth.checkAuthStatus, (req, res) => {
     res.render('docs');
@@ -156,8 +130,18 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
 
         const files = await File.find(query).sort(sort).select('-base64 -versions.base64');
         
+        // Stats Aggregation untuk Sidebar Profile
+        const stats = await File.aggregate([
+            { $match: { owner: req.user._id, deletedAt: null } },
+            { $group: { _id: null, totalSize: { $sum: "$size" } } }
+        ]);
+        const currentUsage = stats.length > 0 ? stats[0].totalSize : 0;
+        req.user.storageUsed = currentUsage;
+        await req.user.save();
+
         res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Error fetching user files.");
     }
 });
@@ -195,6 +179,7 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
 
         res.render('download', { file, downloadLink });
     } catch (error) {
+        console.error(error);
         res.status(500).send("Server Error");
     }
 });
@@ -213,17 +198,16 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
     }
 });
 
+// --- PERBAIKAN RAW DOWNLOAD (R2 STREAMING) ---
 router.get('/w-upload/raw/:identifier', async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
-        if (!file || file.deletedAt) return res.status(404).send('File not found');
+        
+        if (!file) return res.status(404).send('File not found in database.');
+        if (file.deletedAt) return res.status(410).send('File has been deleted.');
         if (file.isFolder) return res.status(400).send('Cannot raw download a folder. Use zip.');
 
-        if (file.allowedGeo && file.allowedGeo.lat) {
-            const ip = req.ip || req.socket.remoteAddress;
-            const geo = geoip.lookup(ip);
-        }
-
+        // 1. Security Checks
         if (file.expiresAt && file.expiresAt < new Date()) {
             file.deletedAt = new Date();
             await file.save();
@@ -246,8 +230,8 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
             }
         }
 
+        // 2. Update Stats
         if (file.downloadLimit !== undefined) file.downloadLimit -= 1;
-
         file.downloads += 1;
         file.lastDownloadedAt = new Date();
         const today = new Date().setHours(0,0,0,0);
@@ -256,18 +240,55 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
         else file.downloadHistory.push({ date: today, count: 1 });
 
         if (file.isBurnAfterRead) file.deletedAt = new Date();
-
         await file.save();
 
-        const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
-        res.writeHead(200, {
-            'Content-Type': file.contentType,
-            'Content-Length': fileBuffer.length,
-            'Content-Disposition': `inline; filename="${file.originalName}"`
-        });
-        res.end(fileBuffer);
+        // 3. Serve File (R2 vs MongoDB)
+        if (file.storageType === 'r2' && file.r2Key) {
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: process.env.R2_BUCKET_NAME,
+                    Key: file.r2Key
+                });
+                
+                const response = await r2.send(command);
+
+                // Set Headers
+                res.setHeader('Content-Type', file.contentType);
+                res.setHeader('Content-Length', file.size);
+                res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
+
+                // Pipe R2 Stream ke Express Response
+                response.Body.pipe(res);
+
+                // Hapus file fisik di R2 jika Burn After Read aktif
+                if (file.isBurnAfterRead) {
+                    await r2.send(new DeleteObjectCommand({ 
+                        Bucket: process.env.R2_BUCKET_NAME, 
+                        Key: file.r2Key 
+                    }));
+                }
+            } catch (r2Error) {
+                console.error("Cloudflare R2 Error:", r2Error);
+                return res.status(500).send("Error retrieving file from Cloud Storage. Please verify credentials/bucket.");
+            }
+        } 
+        else if (file.base64) {
+            // Fallback ke MongoDB Base64 (Untuk file lama)
+            const fileBuffer = Buffer.from(file.base64.split(';base64,').pop(), 'base64');
+            res.writeHead(200, {
+                'Content-Type': file.contentType,
+                'Content-Length': fileBuffer.length,
+                'Content-Disposition': `inline; filename="${file.originalName}"`
+            });
+            res.end(fileBuffer);
+        } 
+        else {
+            return res.status(500).send("File content corrupted or missing.");
+        }
+
     } catch (error) {
-        res.status(500).send('Server Error');
+        console.error("General Download Error:", error);
+        res.status(500).send('Server Internal Error during download.');
     }
 });
 
