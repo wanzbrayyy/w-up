@@ -161,7 +161,7 @@ router.post('/upload', async (req, res) => {
         const r2Key = `${user ? user.id : 'guest'}/${Date.now()}_${uuidv4()}_${finalAlias}`;
         
         await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
+            Bucket: "wanzofc",
             Key: r2Key,
             Body: buffer,
             ContentType: contentType
@@ -258,7 +258,7 @@ router.post('/upload', async (req, res) => {
         const r2Key = `${user ? user.id : 'guest'}/${Date.now()}_${uuidv4()}_${finalAlias}`;
         
         await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
+            Bucket: "wanzofc",
             Key: r2Key,
             Body: buffer,
             ContentType: contentType
