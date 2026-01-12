@@ -19,6 +19,11 @@ function maskPII(text) {
     return text.replace(/\b[\w.-]+@[\w.-]+\.\w{2,4}\b/g, '[EMAIL PROTECTED]').replace(/\b(\+62|0)[0-9]{9,12}\b/g, '[PHONE PROTECTED]');
 }
 
+function cleanEntity(str) {
+    if (!str) return '';
+    return str.trim().replace(/^['"]|['"]$/g, '');
+}
+
 router.post('/chat', auth.protectApi, async (req, res) => {
     try {
         const { message, context } = req.body;
@@ -31,10 +36,134 @@ router.post('/chat', auth.protectApi, async (req, res) => {
 
         let responseText = "";
         let action = null;
+        let match;
 
-        // --- Semantic Search & Discovery ---
+        // --- NEW Regex-based command parsing ---
 
-        if (cleanMsg.startsWith('find photos with') || cleanMsg.startsWith('show me photos of')) {
+        if (match = cleanMsg.match(/rename file (.+?) to (.+)/)) {
+            const oldName = cleanEntity(match[1]);
+            const newName = cleanEntity(match[2]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${oldName}$`, 'i') }, deletedAt: null }, { originalName: newName });
+            responseText = file ? `Renamed "${oldName}" to "${newName}".` : `File "${oldName}" not found.`;
+        }
+        
+        else if (match = cleanMsg.match(/move file (.+?) to (folder )?(.+)/)) {
+            const fileName = cleanEntity(match[1]);
+            const folderName = cleanEntity(match[3]);
+            const fileToMove = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            const targetFolder = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${folderName}$`, 'i') }, isFolder: true, deletedAt: null });
+            if (!fileToMove) responseText = `File "${fileName}" not found.`;
+            else if (!targetFolder) responseText = `Folder "${folderName}" not found.`;
+            else {
+                fileToMove.parentId = targetFolder._id;
+                await fileToMove.save();
+                responseText = `Moved "${fileName}" to "${folderName}".`;
+            }
+        }
+        
+        else if (match = cleanMsg.match(/^(delete|trash) file (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { deletedAt: new Date() });
+            responseText = file ? `Moved "${fileName}" to trash.` : `File "${fileName}" not found.`;
+        }
+        
+        else if (match = cleanMsg.match(/add tag (.+?) to (file )?(.+)/)) {
+            const tagName = cleanEntity(match[1]);
+            const fileName = cleanEntity(match[3]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { $addToSet: { tags: tagName } });
+            responseText = file ? `Added tag "${tagName}" to "${fileName}".` : `File "${fileName}" not found.`;
+        }
+
+        else if (match = cleanMsg.match(/remove tag (.+?) from (file )?(.+)/)) {
+            const tagName = cleanEntity(match[1]);
+            const fileName = cleanEntity(match[3]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { $pull: { tags: tagName } });
+            responseText = file ? `Removed tag "${tagName}" from "${fileName}".` : `File "${fileName}" not found.`;
+        }
+        
+        else if (match = cleanMsg.match(/protect (file )?(.+?) with password (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const password = cleanEntity(match[3]);
+            const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            if (!file) responseText = `File "${fileName}" not found.`;
+            else {
+                file.password = await bcrypt.hash(password, 10);
+                await file.save();
+                responseText = `"${fileName}" is now password protected.`;
+            }
+        }
+        
+        else if (match = cleanMsg.match(/^create (a new )?folder (named )?(.+)/)) {
+            const folderName = cleanEntity(match[3]);
+            await new File({ originalName: folderName, customAlias: `folder_${Date.now()}`, contentType: 'application/vnd.google-apps.folder', size: 0, owner: userId, isFolder: true }).save();
+            responseText = `Folder "${folderName}" created successfully.`;
+        }
+        
+        else if (match = cleanMsg.match(/share (file )?(.+?) with (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const targetIdentifier = cleanEntity(match[3]);
+            const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            const targetUser = await User.findOne({ $or: [{ email: targetIdentifier }, { username: targetIdentifier }] });
+            if(!file) responseText = `File "${fileName}" not found.`;
+            else if (!targetUser) responseText = `User "${targetIdentifier}" not found.`;
+            else {
+                await File.updateOne({ _id: file._id }, { $addToSet: { collaborators: targetUser._id } });
+                responseText = `Shared "${fileName}" with ${targetUser.username}.`;
+            }
+        }
+
+        else if (match = cleanMsg.match(/add user (.+?) to the (.+?) team/)) {
+            const username = cleanEntity(match[1]);
+            const teamName = cleanEntity(match[2]);
+            const team = await Team.findOne({ name: { $regex: new RegExp(`^${teamName}$`, 'i') }, members: userId });
+            const userToAdd = await User.findOne({ username });
+            if(!team) responseText = `Team "${teamName}" not found or you're not a member.`;
+            else if (!userToAdd) responseText = `User "${username}" not found.`;
+            else {
+                await Team.updateOne({ _id: team._id }, { $addToSet: { members: userToAdd._id } });
+                await User.updateOne({ _id: userToAdd._id }, { $addToSet: { teams: team._id } });
+                responseText = `Added ${username} to the ${team.name} team.`;
+            }
+        }
+
+        else if (match = cleanMsg.match(/generate a file request link for (.+)/)) {
+            const label = cleanEntity(match[1]);
+            const slug = Math.random().toString(36).substring(2, 10);
+            const reqFile = new FileRequest({ owner: userId, slug, label });
+            await reqFile.save();
+            const link = `${req.protocol}://${req.get('host')}/req/${slug}`;
+            responseText = `File request link for "${label}" created: ${link}`;
+            action = { type: 'copy', text: link };
+        }
+        
+        else if (cleanMsg.match(/empty my trash/)) {
+            await File.deleteMany({ owner: userId, deletedAt: { $ne: null } });
+            responseText = "Your trash bin has been emptied.";
+        }
+        
+        else if (match = cleanMsg.match(/^(summarize|read|open) (file )?(.+)/)) {
+            const actionType = match[1];
+            const fileName = cleanEntity(match[3]);
+            if (fileName === '[filename]') {
+                responseText = `Please specify a filename to ${actionType}.`;
+            } else {
+                const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+                if (!file) {
+                    responseText = `File "${fileName}" not found.`;
+                } else {
+                    const content = await extractContent(file);
+                    if (actionType === 'summarize') {
+                        responseText = `**Summary of ${file.originalName}:**\n\n${summarizeText(content)}`;
+                    } else {
+                        responseText = `**${file.originalName}**:\n\`\`\`\n${content.substring(0, 800)}\n\`\`\``;
+                    }
+                }
+            }
+        }
+        
+        // --- ORIGINAL CODE (KEPT AS FALLBACK) ---
+
+        else if (cleanMsg.startsWith('find photos with') || cleanMsg.startsWith('show me photos of')) {
             const query = cleanMsg.replace(/^(find photos with|show me photos of)/, '').trim();
             responseText = "Image content search is an advanced feature. As a fallback, I'm searching user tags and descriptions for your query...\n\n";
             const files = await File.find({ owner: userId, contentType: /^image\//, deletedAt: null, $or: [{ tags: query }, { description: new RegExp(query, 'i') }] });
@@ -133,8 +262,6 @@ router.post('/chat', auth.protectApi, async (req, res) => {
                 responseText = `I couldn't find a file named "${filename}".`;
             }
         }
-        
-        // --- Action & Write API ---
         
         else if (cleanMsg.startsWith('rename file')) {
             const parts = cleanMsg.replace('rename file', '').split(' to ');
@@ -244,8 +371,6 @@ router.post('/chat', auth.protectApi, async (req, res) => {
             responseText = "Your trash bin has been emptied.";
         }
         
-        // --- Read-Only Commands ---
-
         else if (cleanMsg.includes('who am i')) { responseText = `Hello **${(await getUserProfile(userId)).username}**!`; }
         else if (cleanMsg.includes('storage')) { const s = await getStorageStats(userId); responseText = `Used: **${s.used}** of **${s.limit}**`; }
         else if (cleanMsg.includes('activity')) { responseText = `**Recent Activity:**\n${await getActivityLog(userId)}`; }
