@@ -303,27 +303,45 @@ document.addEventListener('DOMContentLoaded', () => {
     if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
 
     window.copyText = async (elementId) => {
+        const targetElement = document.getElementById(elementId);
+        if (!targetElement) {
+            showToast('Element to copy not found.', 'error');
+            console.error(`Attempted to copy from non-existent element with ID: ${elementId}`);
+            return;
+        }
+        const textToCopy = targetElement.innerText;
+
+        if (!textToCopy) {
+            showToast('Nothing to copy.', 'warning');
+            return;
+        }
+
         try {
-            const textToCopy = document.getElementById(elementId).innerText;
             await navigator.clipboard.writeText(textToCopy);
             showToast('Copied to clipboard!', 'success');
         } catch (err) {
-            console.error('Failed to copy text: ', err);
-            showToast('Failed to copy. Please copy manually or ensure HTTPS connection.', 'error');
-            // Fallback: If navigator.clipboard is not available or fails (e.g., non-HTTPS)
-            if (document.execCommand && document.queryCommandSupported('copy')) {
-                const tempInput = document.createElement('textarea');
-                tempInput.value = textToCopy;
-                document.body.appendChild(tempInput);
-                tempInput.select();
-                try {
-                    document.execCommand('copy');
+            console.warn('Clipboard API writeText failed, attempting fallback:', err);
+            
+            const tempInput = document.createElement('textarea');
+            tempInput.value = textToCopy;
+            tempInput.style.position = 'absolute';
+            tempInput.style.left = '-9999px';
+            document.body.appendChild(tempInput);
+            tempInput.select();
+
+            try {
+                const success = document.execCommand('copy');
+                if (success) {
                     showToast('Copied to clipboard (fallback)!', 'success');
-                } catch (execErr) {
-                    console.error('Fallback copy failed: ', execErr);
-                } finally {
-                    document.body.removeChild(tempInput);
+                } else {
+                    showToast('Failed to copy (fallback failed). Please copy manually.', 'error');
+                    console.error('Fallback copy command returned false.');
                 }
+            } catch (execErr) {
+                console.error('Fallback copy failed:', execErr);
+                showToast('Failed to copy. Please copy manually.', 'error');
+            } finally {
+                document.body.removeChild(tempInput);
             }
         }
     };
