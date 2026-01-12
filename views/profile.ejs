@@ -19,224 +19,221 @@
         <div class="profile-container">
             <div class="settings-grid">
                 
-                <div class="settings-col">
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-user-circle"></i> Public Profile</h3>
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-user-circle"></i> Public Profile</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" class="full-input" value="<%= user.username %>" readonly disabled>
                         </div>
-                        <div class="card-body">
-                            <div class="form-group">
-                                <label>Username</label>
-                                <input type="text" class="full-input" value="<%= user.username %>" readonly disabled>
-                            </div>
-                            <div class="form-group">
-                                <label>Bio</label>
-                                <textarea id="publicBio" class="full-input" rows="3" placeholder="Tell something about yourself..."><%= user.publicBio || '' %></textarea>
-                            </div>
-                            <div class="form-row">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="publicProfileToggle" <%= user.isPublicProfile ? 'checked' : '' %>>
-                                    <span class="slider"></span>
-                                    <span class="label-text">Enable Public Profile</span>
-                                </label>
-                            </div>
-                            <div class="form-actions">
-                                <a href="/u/<%= user.username %>" target="_blank" class="btn secondary-btn">View Profile</a>
-                                <button id="saveProfileBtn" class="btn primary-btn">Save Changes</button>
-                            </div>
+                        <div class="form-group">
+                            <label>Bio</label>
+                            <textarea id="publicBio" class="full-input" rows="3" placeholder="Tell something about yourself..."><%= user.publicBio || '' %></textarea>
                         </div>
-                    </section>
+                        <div class="form-row">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="publicProfileToggle" <%= user.isPublicProfile ? 'checked' : '' %>>
+                                <span class="slider"></span>
+                                <span class="label-text">Enable Public Profile</span>
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <a href="/u/<%= user.username %>" target="_blank" class="btn secondary-btn">View Profile</a>
+                            <button id="saveProfileBtn" class="btn primary-btn">Save Changes</button>
+                        </div>
+                    </div>
+                </section>
 
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-gift"></i> Referral & Storage</h3>
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-key"></i> API Keys</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group" style="display:flex; gap:0.5rem;">
+                            <input type="text" id="newKeyLabel" class="full-input" placeholder="Key Label (e.g. App Server)">
+                            <button id="generateKeyBtn" class="btn primary-btn" style="white-space:nowrap;">Generate</button>
                         </div>
-                        <div class="card-body">
-                            <div class="referral-box">
-                                <p>Share your code to earn bonus storage!</p>
-                                <div class="code-display">
-                                    <code id="refCode"><%= user.referralCode %></code>
-                                    <button class="icon-btn" onclick="copyText('refCode')"><i class="fa-solid fa-copy"></i></button>
-                                </div>
-                            </div>
-                            
-                            <div class="stats-row" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
-                                <% 
-                                    const totalLimit = user.storageLimit + (user.storageBonus || 0);
-                                    const used = user.storageUsed || 0;
-                                    const percentage = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
-                                    const isFull = percentage >= 90;
-                                %>
-                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem; font-size: 0.9rem;">
-                                    <span class="stat-label">Storage Usage (<%= user.plan.toUpperCase() %>)</span>
-                                    <span class="stat-value" style="font-weight:bold; <%= isFull ? 'color:#ef4444;' : '' %>">
-                                        <%= (used / 1024 / 1024).toFixed(2) %> MB / 
-                                        <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB
-                                    </span>
-                                </div>
-                                <div class="progress-bar" style="height:12px; background:var(--bg-secondary); border-radius:6px; overflow:hidden; border:1px solid var(--border);">
-                                    <div class="fill" style="width:<%= percentage %>%; background:<%= isFull ? '#ef4444' : 'var(--primary)' %>; height:100%; transition: width 0.5s ease;"></div>
-                                </div>
-                                
-                                <% if(user.plan === 'free') { %>
-                                    <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem; background: linear-gradient(45deg, #f59e0b, #d97706); border:none;">
-                                        <i class="fa-solid fa-crown"></i> Upgrade to PRO
-                                    </button>
-                                <% } else { %>
-                                    <p style="margin-top:1rem; color:#16a34a; text-align:center; font-weight:500; font-size:0.9rem;">
-                                        <i class="fa-solid fa-check-circle"></i> PRO Plan Active
-                                    </p>
-                                <% } %>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-bolt"></i> Webhook Events</h3>
-                            <button id="testWebhookBtn" class="btn secondary-btn-sm">Test Ping</button>
-                        </div>
-                        <div class="card-body">
-                            <div class="form-group">
-                                <label>Endpoint URL</label>
-                                <input type="url" id="webhookUrl" class="full-input" placeholder="https://api.yourapp.com/webhook" value="<%= user.webhook ? user.webhook.url : '' %>">
-                            </div>
-                            <div class="form-group">
-                                <label>Secret Key (Optional)</label>
-                                <input type="password" id="webhookSecret" class="full-input" placeholder="Signing Secret" value="<%= user.webhook ? user.webhook.secret : '' %>">
-                            </div>
-                            <div class="form-row">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="webhookActive" <%= (user.webhook && user.webhook.isActive) ? 'checked' : '' %>>
-                                    <span class="slider"></span>
-                                    <span class="label-text">Active</span>
-                                </label>
-                            </div>
-                            <div class="form-actions">
-                                <button id="saveWebhookBtn" class="btn primary-btn">Save Configuration</button>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-
-                <div class="settings-col">
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-key"></i> API Keys</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="form-group" style="display:flex; gap:0.5rem;">
-                                <input type="text" id="newKeyLabel" class="full-input" placeholder="Key Label (e.g. App Server)">
-                                <button id="generateKeyBtn" class="btn primary-btn" style="white-space:nowrap;">Generate</button>
-                            </div>
-                            
-                            <div id="apiKeysList" class="items-list">
-                                <% if(user.apiKeys && user.apiKeys.length > 0) { %>
-                                    <% user.apiKeys.forEach(apiKey => { %>
-                                        <div class="list-item">
-                                            <div class="item-info">
-                                                <div class="item-title"><%= apiKey.label %></div>
-                                                <div class="item-meta">
-                                                    <code id="key-<%= apiKey._id %>"><%= apiKey.key %></code>
-                                                </div>
-                                            </div>
-                                            <div class="item-actions">
-                                                <button class="icon-btn" onclick="copyText('key-<%= apiKey._id %>')" title="Copy Key">
-                                                    <i class="fa-solid fa-copy"></i>
-                                                </button>
-                                                <button class="icon-btn danger" onclick="revokeApiKey('<%= apiKey._id %>')">
-                                                    <i class="fa-solid fa-trash"></i>
-                                                </button>
+                        
+                        <div id="apiKeysList" class="items-list">
+                            <% if(user.apiKeys && user.apiKeys.length > 0) { %>
+                                <% user.apiKeys.forEach(apiKey => { %>
+                                    <div class="list-item">
+                                        <div class="item-info">
+                                            <div class="item-title"><%= apiKey.label %></div>
+                                            <div class="item-meta">
+                                                <code id="key-<%= apiKey._id %>"><%= apiKey.key %></code>
                                             </div>
                                         </div>
-                                    <% }) %>
-                                <% } else { %>
-                                    <p class="text-muted" style="text-align:center;">No API Keys generated.</p>
-                                <% } %>
+                                        <div class="item-actions">
+                                            <button class="icon-btn" onclick="copyText('key-<%= apiKey._id %>')" title="Copy Key">
+                                                <i class="fa-solid fa-copy"></i>
+                                            </button>
+                                            <button class="icon-btn danger" onclick="revokeApiKey('<%= apiKey._id %>')">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                <% }) %>
+                            <% } else { %>
+                                <p class="text-muted" style="text-align:center;">No API Keys generated.</p>
+                            <% } %>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-gift"></i> Referral & Storage</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="referral-box">
+                            <p>Share your code to earn bonus storage!</p>
+                            <div class="code-display">
+                                <code id="refCode"><%= user.referralCode %></code>
+                                <button class="icon-btn" onclick="copyText('refCode')"><i class="fa-solid fa-copy"></i></button>
                             </div>
                         </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-shield-halved"></i> Security Center</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="security-item">
-                                <div class="security-info">
-                                    <strong>Two-Factor Authentication</strong>
-                                    <p>Secure your account with a TOTP app.</p>
-                                </div>
-                                <span class="badge <%= user.isTwoFactorEnabled ? 'success' : 'warning' %>">
-                                    <%= user.isTwoFactorEnabled ? 'Enabled' : 'Disabled' %>
+                        
+                        <div class="stats-row" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
+                            <% 
+                                const totalLimit = user.storageLimit + (user.storageBonus || 0);
+                                const used = user.storageUsed || 0;
+                                const percentage = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
+                                const isFull = percentage >= 90;
+                            %>
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem; font-size: 0.9rem;">
+                                <span class="stat-label">Storage Usage (<%= user.plan.toUpperCase() %>)</span>
+                                <span class="stat-value" style="font-weight:bold; <%= isFull ? 'color:#ef4444;' : '' %>">
+                                    <%= (used / 1024 / 1024).toFixed(2) %> MB / 
+                                    <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB
                                 </span>
                             </div>
-                            <% if (!user.isTwoFactorEnabled) { %>
-                                <button id="setup2faBtn" class="btn secondary-btn" style="width:100%">Setup 2FA</button>
-                                <div id="2faSetupArea" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:1rem;">
-                                    <p class="instruction">1. Scan QR with your authenticator app:</p>
-                                    <div id="qrCodeContainer" style="text-align:center; margin:1rem 0;"></div>
-                                    <p class="instruction">Secret: <code id="secretCode"></code></p>
-                                    <p class="instruction">2. Enter verification code:</p>
-                                    <form id="verify2faForm" style="display:flex; gap:0.5rem;">
-                                        <input type="text" id="2faTokenInput" class="full-input" placeholder="000000" maxlength="6" required>
-                                        <button type="submit" class="btn primary-btn">Enable</button>
-                                    </form>
-                                </div>
+                            <div class="progress-bar" style="height:12px; background:var(--bg-secondary); border-radius:6px; overflow:hidden; border:1px solid var(--border);">
+                                <div class="fill" style="width:<%= percentage %>%; background:<%= isFull ? '#ef4444' : 'var(--primary)' %>; height:100%; transition: width 0.5s ease;"></div>
+                            </div>
+                            
+                            <% if(user.plan === 'free') { %>
+                                <button id="upgradeBtn" class="btn primary-btn" style="width:100%; margin-top:1rem; background: linear-gradient(45deg, #f59e0b, #d97706); border:none;">
+                                    <i class="fa-solid fa-crown"></i> Upgrade to PRO
+                                </button>
+                            <% } else { %>
+                                <p style="margin-top:1rem; color:#16a34a; text-align:center; font-weight:500; font-size:0.9rem;">
+                                    <i class="fa-solid fa-check-circle"></i> PRO Plan Active
+                                </p>
                             <% } %>
-
-                            <div class="security-item passkey-section" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
-                                <div class="security-info">
-                                    <strong>Passkeys (Biometric Login)</strong>
-                                    <p>Log in with Face ID or fingerprint.</p>
-                                </div>
-                                <button id="addPasskeyBtn" class="btn primary-btn"><i class="fa-solid fa-plus"></i> Add</button>
-                            </div>
-                            <div id="passkeyList" class="items-list">
-                                <% if(user.passkeys && user.passkeys.length > 0) { %>
-                                    <% user.passkeys.forEach(key => { %>
-                                        <div class="list-item">
-                                            <div class="item-info">
-                                                <span><i class="fa-solid fa-fingerprint"></i> Registered Device</span>
-                                            </div>
-                                            <button onclick="removePasskey('<%= key.credentialID.toString('base64url') %>')" class="btn danger-btn-sm"><i class="fa-solid fa-trash"></i></button>
-                                        </div>
-                                    <% }) %>
-                                <% } else { %>
-                                    <p class="text-muted" style="text-align:center; padding:1rem;">No passkeys registered.</p>
-                                <% } %>
-                            </div>
                         </div>
-                    </section>
+                    </div>
+                </section>
 
-                    <section class="settings-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-laptop"></i> Active Sessions</h3>
-                            <button id="logoutAllBtn" class="btn danger-btn-sm">Logout Others</button>
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-shield-halved"></i> Security Center</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="security-item">
+                            <div class="security-info">
+                                <strong>Two-Factor Authentication</strong>
+                                <p>Secure your account with a TOTP app.</p>
+                            </div>
+                            <span class="badge <%= user.isTwoFactorEnabled ? 'success' : 'warning' %>">
+                                <%= user.isTwoFactorEnabled ? 'Enabled' : 'Disabled' %>
+                            </span>
                         </div>
-                        <div class="card-body no-padding">
-                            <ul class="session-list">
-                                <% user.sessions.forEach(session => { %>
-                                    <li class="session-item">
-                                        <div class="session-icon">
-                                            <i class="fa-brands <%= session.os.toLowerCase().includes('win') ? 'fa-windows' : (session.os.toLowerCase().includes('mac') ? 'fa-apple' : (session.os.toLowerCase().includes('linux') ? 'fa-linux' : 'fa-mobile-screen-button')) %>"></i>
+                        <% if (!user.isTwoFactorEnabled) { %>
+                            <button id="setup2faBtn" class="btn secondary-btn" style="width:100%">Setup 2FA</button>
+                            <div id="2faSetupArea" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:1rem;">
+                                <p class="instruction">1. Scan QR with your authenticator app:</p>
+                                <div id="qrCodeContainer" style="text-align:center; margin:1rem 0;"></div>
+                                <p class="instruction">Secret: <code id="secretCode"></code></p>
+                                <p class="instruction">2. Enter verification code:</p>
+                                <form id="verify2faForm" style="display:flex; gap:0.5rem;">
+                                    <input type="text" id="2faTokenInput" class="full-input" placeholder="000000" maxlength="6" required>
+                                    <button type="submit" class="btn primary-btn">Enable</button>
+                                </form>
+                            </div>
+                        <% } %>
+
+                        <div class="security-item passkey-section" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+                            <div class="security-info">
+                                <strong>Passkeys (Biometric Login)</strong>
+                                <p>Log in with Face ID or fingerprint.</p>
+                            </div>
+                            <button id="addPasskeyBtn" class="btn primary-btn"><i class="fa-solid fa-plus"></i> Add</button>
+                        </div>
+                        <div id="passkeyList" class="items-list">
+                            <% if(user.passkeys && user.passkeys.length > 0) { %>
+                                <% user.passkeys.forEach(key => { %>
+                                    <div class="list-item">
+                                        <div class="item-info">
+                                            <span><i class="fa-solid fa-fingerprint"></i> Registered Device</span>
                                         </div>
-                                        <div class="session-info">
-                                            <div class="session-title">
-                                                <%= session.os %> - <%= session.browser %>
-                                                <% if(session.deviceId === 'current') { %> <span class="badge current">Current</span> <% } %>
-                                            </div>
-                                            <div class="session-meta">
-                                                <%= session.ip %> &bull; <%= session.location || 'Unknown' %> &bull; <%= new Date(session.lastActive).toLocaleDateString() %>
-                                            </div>
-                                        </div>
-                                        <button class="icon-btn danger" onclick="revokeSession('<%= session.deviceId %>')"><i class="fa-solid fa-trash"></i></button>
-                                    </li>
+                                        <button onclick="removePasskey('<%= key.credentialID.toString('base64url') %>')" class="btn danger-btn-sm"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
                                 <% }) %>
-                            </ul>
+                            <% } else { %>
+                                <p class="text-muted" style="text-align:center; padding:1rem;">No passkeys registered.</p>
+                            <% } %>
                         </div>
-                    </section>
-                </div>
+                    </div>
+                </section>
+                
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-bolt"></i> Webhook Events</h3>
+                        <button id="testWebhookBtn" class="btn secondary-btn-sm">Test Ping</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Endpoint URL</label>
+                            <input type="url" id="webhookUrl" class="full-input" placeholder="https://api.yourapp.com/webhook" value="<%= user.webhook ? user.webhook.url : '' %>">
+                        </div>
+                        <div class="form-group">
+                            <label>Secret Key (Optional)</label>
+                            <input type="password" id="webhookSecret" class="full-input" placeholder="Signing Secret" value="<%= user.webhook ? user.webhook.secret : '' %>">
+                        </div>
+                        <div class="form-row">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="webhookActive" <%= (user.webhook && user.webhook.isActive) ? 'checked' : '' %>>
+                                <span class="slider"></span>
+                                <span class="label-text">Active</span>
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button id="saveWebhookBtn" class="btn primary-btn">Save Configuration</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="settings-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-laptop"></i> Active Sessions</h3>
+                        <button id="logoutAllBtn" class="btn danger-btn-sm">Logout Others</button>
+                    </div>
+                    <div class="card-body no-padding">
+                        <ul class="session-list">
+                            <% user.sessions.forEach(session => { %>
+                                <li class="session-item">
+                                    <div class="session-icon">
+                                        <i class="fa-brands <%= session.os.toLowerCase().includes('win') ? 'fa-windows' : (session.os.toLowerCase().includes('mac') ? 'fa-apple' : (session.os.toLowerCase().includes('linux') ? 'fa-linux' : 'fa-mobile-screen-button')) %>"></i>
+                                    </div>
+                                    <div class="session-info">
+                                        <div class="session-title">
+                                            <%= session.os %> - <%= session.browser %>
+                                            <% if(session.deviceId === currentRefreshToken) { %> <span class="badge current">Current</span> <% } %>
+                                        </div>
+                                        <div class="session-meta">
+                                            <%= session.ip %> &bull; <%= session.location || 'Unknown' %> &bull; <%= new Date(session.lastActive).toLocaleDateString() %>
+                                        </div>
+                                    </div>
+                                    <button class="icon-btn danger" onclick="revokeSession('<%= session.deviceId %>')"><i class="fa-solid fa-trash"></i></button>
+                                </li>
+                            <% }) %>
+                        </ul>
+                    </div>
+                </section>
+
             </div>
         </div>
     </main>
@@ -281,7 +278,7 @@
     .list-item { display:flex; justify-content:space-between; align-items:center; background:var(--bg-secondary); padding:0.75rem; border-radius:8px; margin-bottom:0.5rem; border:1px solid var(--border); }
     .item-info { flex: 1; overflow: hidden; }
     .item-title { font-weight: 600; font-size: 0.9rem; }
-    .item-meta code { font-size: 0.8rem; background: #e5e7eb; padding: 2px 5px; border-radius: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90%; margin-top: 4px; }
+    .item-meta code { font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); padding: 2px 5px; border-radius: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90%; margin-top: 4px; }
     .item-actions { display: flex; gap: 0.5rem; }
     
     @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } }
