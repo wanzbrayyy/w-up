@@ -99,6 +99,7 @@ router.post('/folder', auth.protectApi, async (req, res) => {
 router.post('/upload', async (req, res) => {
     try {
         let user = null;
+
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
                 auth.protectApi(req, res, () => { 
@@ -111,7 +112,7 @@ router.post('/upload', async (req, res) => {
         if (!user && req.body.fileRequestSlug) {
              const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
              if (reqObj) {
-                 user = { id: reqObj.owner };
+                 user = await User.findById(reqObj.owner);
                  req.body.parentId = reqObj.destinationFolder; 
              }
         } 
@@ -121,14 +122,8 @@ router.post('/upload', async (req, res) => {
 
         let { filename, contentType, base64, watermarkText, parentId, description, tags, hidden, expires, limit, password, hint, geo, burn, customAlias } = req.body;
         
-        // 1. Convert Base64 ke Buffer
         let buffer = Buffer.from(base64.split(',')[1], 'base64');
         
-        // 2. Magic Bytes Validation
-        // Pastikan fungsi validateMagicBytes ada di file ini atau diimport
-        // if (!validateMagicBytes(buffer, contentType)) { ... } 
-
-        // 3. Watermark Process
         if (contentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
             const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
@@ -139,9 +134,8 @@ router.post('/upload', async (req, res) => {
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
-        // 4. Duplicate Check
         if (user) {
-            const duplicate = await File.findOne({ owner: user.id, md5Hash: hash, deletedAt: null });
+            const duplicate = await File.findOne({ owner: user._id, md5Hash: hash, deletedAt: null });
             if (duplicate) {
                 return res.status(200).json({ 
                     status: 'success', 
@@ -152,8 +146,7 @@ router.post('/upload', async (req, res) => {
             }
         }
 
-        let finalAlias = customAlias || filename; // Menggunakan filename asli jika customAlias kosong
-        // Sanitasi filename agar aman (hapus karakter aneh)
+        let finalAlias = customAlias || filename;
         finalAlias = finalAlias.replace(/[^a-zA-Z0-9._-]/g, '_');
 
         let counter = 1;
@@ -164,11 +157,9 @@ router.post('/upload', async (req, res) => {
             counter++;
         }
 
-        // 5. UPLOAD TO R2
-        // PERBAIKAN DI SINI: Menggunakan crypto.randomUUID() menggantikan uuidv4()
-        const r2Key = `${user ? user.id : 'guest'}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
+        const r2Key = `${user ? user._id : 'guest'}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
         
-        const { r2, PutObjectCommand } = require('../utils/r2'); // Pastikan import ini ada/sesuai path
+        const { r2, PutObjectCommand } = require('../utils/r2');
         await r2.send(new PutObjectCommand({
             Bucket: process.env.R2_BUCKET_NAME,
             Key: r2Key,
@@ -176,7 +167,6 @@ router.post('/upload', async (req, res) => {
             ContentType: contentType
         }));
 
-        // 6. Save Metadata
         const newFile = new File({
             originalName: filename, 
             customAlias: finalAlias, 
@@ -184,7 +174,7 @@ router.post('/upload', async (req, res) => {
             size: buffer.length, 
             storageType: 'r2',
             r2Key: r2Key,
-            owner: user ? user.id : null,
+            owner: user ? user._id : null,
             parentId: parentId || null,
             description,
             tags: tags ? tags.split(',').map(t => t.trim()) : [],
@@ -201,6 +191,19 @@ router.post('/upload', async (req, res) => {
         if (password) newFile.password = await bcrypt.hash(password, 10);
 
         await newFile.save();
+
+        if (user) {
+            triggerWebhook(user, 'file.uploaded', {
+                fileId: newFile._id,
+                filename: newFile.originalName,
+                alias: newFile.customAlias,
+                size: newFile.size,
+                contentType: newFile.contentType,
+                url: `${req.protocol}://${req.get('host')}/w-upload/file/${newFile.customAlias}`,
+                uploadedAt: newFile.createdAt
+            });
+        }
+
         res.status(201).json({ status: 'success', url: `${req.protocol}://${req.get('host')}/w-upload/file/${finalAlias}`, filename: finalAlias });
     } catch (error) {
         console.error("Upload Error:", error);
@@ -608,14 +611,51 @@ router.post('/profile/2fa/verify', auth.protectApi, async (req, res) => {
     }
 });
 
+router.get('/profile/api-keys', auth.protectApi, async (req, res) => {
+    res.json({ keys: req.user.apiKeys });
+});
+
 router.post('/profile/api-key', auth.protectApi, async (req, res) => {
     const { label } = req.body;
     const key = `wu_${crypto.randomBytes(24).toString('hex')}`;
-    req.user.apiKeys.push({ key, label });
+    
+    req.user.apiKeys.push({ key, label: label || 'Unnamed Key' });
     await req.user.save();
-    res.status(201).json({ message: 'API Key generated.', key });
+    
+    res.status(201).json({ message: 'API Key generated.', key, label });
 });
 
+router.delete('/profile/api-key/:keyId', auth.protectApi, async (req, res) => {
+    await User.updateOne(
+        { _id: req.user.id },
+        { $pull: { apiKeys: { _id: req.params.keyId } } }
+    );
+    res.json({ message: 'API Key revoked.' });
+});
+
+// --- Routes Management Webhook ---
+
+router.get('/profile/webhook', auth.protectApi, async (req, res) => {
+    res.json({ webhook: req.user.webhook });
+});
+
+router.post('/profile/webhook', auth.protectApi, async (req, res) => {
+    const { url, secret, isActive } = req.body;
+    
+    req.user.webhook = {
+        url,
+        secret: secret || req.user.webhook.secret,
+        isActive: isActive === undefined ? true : isActive
+    };
+    
+    await req.user.save();
+    res.json({ message: 'Webhook configuration saved.', webhook: req.user.webhook });
+});
+
+router.post('/profile/webhook/test', auth.protectApi, async (req, res) => {
+    triggerWebhook(req.user, 'test.ping', { message: 'This is a test webhook.' });
+    res.json({ message: 'Test webhook sent.' });
+});
 router.get('/profile/devices', auth.protectApi, async (req, res) => {
     const user = await User.findById(req.user.id);
     res.json({ sessions: user.sessions });

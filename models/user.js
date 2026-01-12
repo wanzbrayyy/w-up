@@ -16,12 +16,14 @@ const UserSchema = new mongoose.Schema({
   isBanned: { type: Boolean, default: false },
   banReason: { type: String },
   isVerified: { type: Boolean, default: false },
+  
   plan: { type: String, enum: ['free', 'pro'], default: 'free' },
   subscriptionExpiresAt: { type: Date },
   storageLimit: { type: Number, default: 1073741824 },
   storageUsed: { type: Number, default: 0 },
   bandwidthLimit: { type: Number, default: 0 },
   walletBalance: { type: Number, default: 0 },
+  
   referralCode: { type: String, unique: true },
   referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   referralCount: { type: Number, default: 0 },
@@ -37,7 +39,18 @@ const UserSchema = new mongoose.Schema({
   passkeys: [WebAuthnCredentialSchema],
   currentChallenge: { type: String },
   
-  apiKeys: [{ key: String, label: String, createdAt: { type: Date, default: Date.now } }],
+  apiKeys: [{ 
+    key: { type: String, required: true }, 
+    label: { type: String, default: 'General' },
+    lastUsed: { type: Date },
+    createdAt: { type: Date, default: Date.now } 
+  }],
+
+  webhook: {
+    url: { type: String, default: '' },
+    secret: { type: String, default: '' },
+    isActive: { type: Boolean, default: false }
+  },
   
   isPublicProfile: { type: Boolean, default: false },
   publicBio: { type: String, default: '' },
