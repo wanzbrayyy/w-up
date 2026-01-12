@@ -94,7 +94,8 @@
         const typing = document.getElementById('ai-typing');
         const suggestionsBox = document.getElementById('ai-suggestions');
 
-        const commands = [
+        // NEW, EXPANDED COMMAND LIST
+        const newCommands = [
             "Who am I?",
             "Storage Usage",
             "Show my most downloaded files",
@@ -109,6 +110,20 @@
             "Share [filename] with user@example.com",
             "Empty my trash"
         ];
+        
+        // ORIGINAL COMMAND LIST
+        const oldCommands = [
+            "Who am I?",
+            "Storage Usage",
+            "Read file",
+            "My Team",
+            "Activity Log",
+            "Search User",
+            "Go to Settings"
+        ];
+        
+        // COMBINED LIST
+        const commands = [...new Set([...newCommands, ...oldCommands])]; // Menggabungkan dan menghilangkan duplikat
 
         const renderSuggestions = () => {
             suggestionsBox.innerHTML = '';
@@ -166,18 +181,26 @@
             fetch(`/api/ai/feedback/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) }).catch(console.error);
         };
 
-        const getContext = () => ({
-            title: document.title,
-            route: window.location.pathname,
-            language: navigator.language || 'en'
-        });
+        const getContext = () => {
+            const errorEl = document.querySelector('.alert-danger, .error-message, .toast.error');
+            return {
+                title: document.title,
+                route: window.location.pathname,
+                hasError: !!errorEl,
+                errorMessage: errorEl ? errorEl.innerText : null,
+                isMobile: window.innerWidth <= 768,
+                language: navigator.language || 'en',
+                theme: document.documentElement.getAttribute('data-theme') || 'light'
+            };
+        };
 
         const handleSend = async () => {
             let text = input.value.trim();
             if (!text) return;
-
-            if (text.includes('[filename]') && window.contextTarget) {
-                text = text.replace('[filename]', `"${window.contextTarget.dataset.name}"`);
+            
+            // NEW: Contextual command filling
+            if (text.includes('[filename]') && window.contextTarget && window.contextTarget.dataset.name) {
+                text = text.replace(/\[filename\]/g, `"${window.contextTarget.dataset.name}"`);
             }
             
             addMsg(text, 'user');
@@ -203,6 +226,13 @@
                     } else if (data.action.type === 'copy') {
                         navigator.clipboard.writeText(data.action.text);
                         addMsg('<i class="fa-solid fa-copy"></i> Link copied to clipboard.', 'bot');
+                    } else if (data.action.type === 'fill_form') {
+                        document.querySelectorAll(data.action.target).forEach(el => {
+                            el.value = data.action.value;
+                            el.style.transition = 'background 0.5s';
+                            el.style.backgroundColor = '#dcfce7';
+                            setTimeout(() => el.style.backgroundColor = '', 1500);
+                        });
                     }
                 }
             } catch (e) {
@@ -214,4 +244,4 @@
         sendBtn.addEventListener('click', handleSend);
         input.addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
     });
-</script>
+</script>```
