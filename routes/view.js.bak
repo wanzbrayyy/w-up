@@ -199,24 +199,29 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
         if (file.password) {
             const token = req.cookies[`file_access_${file._id}`];
             if (!token) return res.render('password_prompt', { file, hint: file.passwordHint });
-            try {
-                jwt.verify(token, process.env.JWT_SECRET);
-            } catch (e) {
-                return res.render('password_prompt', { file, hint: file.passwordHint, error: 'Session expired.' });
-            }
+            try { jwt.verify(token, process.env.JWT_SECRET); } 
+            catch (e) { return res.render('password_prompt', { file, hint: file.passwordHint, error: 'Session expired.' }); }
         }
         
-        let downloadLink;
-        if (file.isFolder) {
-            downloadLink = `/api/files/${file._id}/zip`;
-        } else {
-            downloadLink = `/w-upload/raw/${file.customAlias}`;
+        const downloadLink = file.isFolder ? `/api/files/${file._id}/zip` : `/w-upload/raw/${file.customAlias}`;
+        const fileExtension = path.extname(file.originalName).toLowerCase();
+        const isOwner = req.user && file.owner.equals(req.user._id);
+
+        // Logic routing ke viewer yang tepat
+        if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(fileExtension) && isOwner) {
+            return res.render('editor_image', { file, downloadLink });
         }
-
-        const viewerExtensions = /\.(js|css|html|php|py|java|c|cpp|xml|ts|jsx|md|txt|json|sql|rb|go|rs|zip|rar|pdf|docx|doc|xlsx|xls|pptx|ppt|mp4|webm|jpg|jpeg|png|gif|webp)$/i;
-
-        if (!file.isFolder && file.originalName.match(viewerExtensions)) {
-            return res.render('viewer', { file, downloadLink });
+        if (fileExtension === '.pdf' && isOwner) {
+            return res.render('editor_pdf', { file, rawLink: downloadLink });
+        }
+        if (fileExtension === '.md' && isOwner) {
+            return res.render('editor_markdown', { file, rawLink: downloadLink });
+        }
+        if (['.js', '.css', '.html', '.py', '.java', '.c', '.cpp', '.xml', '.ts', '.jsx', '.json', '.sql', '.rb', '.go'].includes(fileExtension)) {
+            return res.render('viewer_code', { file, rawLink: downloadLink, ext: fileExtension.substring(1) });
+        }
+        if (['.zip', '.rar'].includes(fileExtension)) {
+             return res.render('viewer_archive', { file, downloadLink });
         }
 
         res.render('download', { file, downloadLink });
