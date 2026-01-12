@@ -1,0 +1,38 @@
+<%- include('partials/header', { title: 'PDF Annotator' }) %>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+<style>
+    #pdf-viewer { border: 1px solid #ccc; max-width: 800px; margin: auto; }
+    canvas { display: block; margin: 10px auto; }
+    .pdf-controls { text-align: center; padding: 10px; }
+</style>
+
+<div class="pdf-controls">
+    <button id="savePdfBtn">Save Annotated PDF</button>
+</div>
+<div id="pdf-viewer"></div>
+
+<script>
+    const { PDFDocument } = PDFLib;
+    const url = '<%= rawLink %>';
+    const pdfViewer = document.getElementById('pdf-viewer');
+
+    pdfjsLib.getDocument(url).promise.then(pdf => {
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            pdf.getPage(pageNum).then(page => {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                const viewport = page.getViewport({ scale: 1.5 });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                pdfViewer.appendChild(canvas);
+                page.render({ canvasContext: context, viewport: viewport });
+            });
+        }
+    });
+
+    document.getElementById('savePdfBtn').addEventListener('click', () => {
+        alert('PDF annotation is a highly complex feature. This is a placeholder for a UI that would draw on the canvas and then use pdf-lib to save modifications. A full implementation requires a dedicated library or significant custom code.');
+    });
+</script>
+<%- include('partials/footer') %>

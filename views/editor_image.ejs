@@ -1,0 +1,33 @@
+<%- include('partials/header', { title: 'Image Editor' }) %>
+<link rel="stylesheet" href="https://uicdn.toast.com/tui-image-editor/latest/tui-image-editor.css">
+<style>body { background: #1a1a1a; } .tui-image-editor-container { margin: 20px auto; }</style>
+
+<div id="tui-image-editor-container"></div>
+<button id="saveBtn" style="position:fixed; top:20px; right:20px; z-index:10;">Save Changes</button>
+
+<script src="https://uicdn.toast.com/tui-image-editor/latest/tui-image-editor.js"></script>
+<script>
+    const imageEditor = new tui.ImageEditor('#tui-image-editor-container', {
+        includeUI: {
+            loadImage: { path: '/w-upload/raw/<%= file.customAlias %>', name: '<%= file.originalName %>' },
+            theme: 'dark',
+            menu: ['crop', 'flip', 'rotate', 'draw', 'shape', 'icon', 'text', 'mask', 'filter'],
+            initMenu: 'filter',
+            uiSize: { width: '100%', height: 'calc(100vh - 50px)' },
+            menuBarPosition: 'bottom'
+        },
+        cssMaxWidth: 900,
+        cssMaxHeight: 700,
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+        const base64 = imageEditor.toDataURL();
+        const res = await fetch('/api/files/<%= file._id %>/save-version', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64 })
+        });
+        if (res.ok) alert('Saved!'); else alert('Failed!');
+    });
+</script>
+<%- include('partials/footer') %>

@@ -1,0 +1,29 @@
+<%- include('partials/header', { title: 'Markdown Editor' }) %>
+<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+<style>.editor-toolbar, .EasyMDEContainer { background: #fff; color: #000; }</style>
+
+<textarea id="markdown-editor"></textarea>
+<button id="saveMdBtn" style="margin: 10px;">Save Document</button>
+
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+<script>
+    const easyMDE = new EasyMDE({ element: document.getElementById('markdown-editor') });
+    fetch('<%= rawLink %>').then(res => res.text()).then(text => easyMDE.value(text));
+
+    document.getElementById('saveMdBtn').addEventListener('click', async () => {
+        const content = easyMDE.value();
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+            const base64 = reader.result;
+            const res = await fetch('/api/files/<%= file._id %>/save-version', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base64 })
+            });
+            if(res.ok) alert('Saved!'); else alert('Failed!');
+        };
+    });
+</script>
+<%- include('partials/footer') %>

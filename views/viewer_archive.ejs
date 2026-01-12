@@ -1,0 +1,27 @@
+<%- include('partials/header', { title: 'Archive Viewer' }) %>
+<div style="text-align:center; padding: 50px;">
+    <h2><%= file.originalName %></h2>
+    <p>This is a compressed archive.</p>
+    <button id="extractBtn">Extract Files</button>
+    <a href="<%= downloadLink %>">Download Archive</a>
+    <div id="status"></div>
+</div>
+
+<script>
+document.getElementById('extractBtn').addEventListener('click', async () => {
+    document.getElementById('status').innerText = 'Extracting...';
+    try {
+        const res = await fetch('/api/files/<%= file._id %>/extract', { method: 'POST' });
+        const data = await res.json();
+        if(res.ok) {
+            document.getElementById('status').innerText = `Extracted to folder: ${data.folder.originalName}`;
+            window.location.href = `/dashboard?folderId=${data.folder._id}`;
+        } else {
+            document.getElementById('status').innerText = `Error: ${data.message}`;
+        }
+    } catch(e) {
+        document.getElementById('status').innerText = 'A server error occurred.';
+    }
+});
+</script>
+<%- include('partials/footer') %>

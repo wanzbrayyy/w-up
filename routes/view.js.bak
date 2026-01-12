@@ -9,6 +9,8 @@ const FileRequest = require('../models/fileRequest');
 const auth = require('../middleware/auth');
 const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
 
+// --- ROUTES AUTH VIEW ---
+
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
 
 router.get('/login', auth.checkAuthStatus, (req, res) => 
@@ -19,7 +21,38 @@ router.get('/register', auth.checkAuthStatus, (req, res) =>
     res.locals.isLoggedIn ? res.redirect('/dashboard') : res.render('register')
 );
 
-// FIX: Mengirim currentRefreshToken ke view profile.ejs
+// FIX: Menambahkan Route Logout di sini agar bisa diakses via /logout
+router.get('/logout', async (req, res) => {
+    const refreshToken = req.cookies.refresh_token;
+    
+    // Hapus sesi dari database jika ada refresh token
+    if (refreshToken) {
+        try {
+            const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+            await User.updateOne({ _id: decoded.id }, { $pull: { sessions: { refreshToken } } });
+        } catch(e) {
+            // Token invalid atau expired, abaikan error saat logout
+        }
+    }
+
+    // Hapus semua cookies
+    res.clearCookie('token');
+    res.clearCookie('refresh_token');
+    res.clearCookie('temp_token');
+
+    // Opsional: Hapus cookie akses file jika ada
+    const cookies = req.cookies;
+    for (const cookieName in cookies) {
+        if (cookieName.startsWith('file_access_')) {
+            res.clearCookie(cookieName);
+        }
+    }
+
+    res.redirect('/login');
+});
+
+// --- ROUTES DASHBOARD & UTILS ---
+
 router.get('/profile', auth.protectView, (req, res) => {
     const currentRefreshToken = req.cookies.refresh_token || '';
     res.render('profile', { currentRefreshToken });
