@@ -302,10 +302,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
     if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
 
-    window.copyText = (elementId) => {
-        const text = document.getElementById(elementId).innerText;
-        navigator.clipboard.writeText(text);
-        showToast('Copied to clipboard!', 'success');
+    window.copyText = async (elementId) => {
+        try {
+            const textToCopy = document.getElementById(elementId).innerText;
+            await navigator.clipboard.writeText(textToCopy);
+            showToast('Copied to clipboard!', 'success');
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            showToast('Failed to copy. Please copy manually or ensure HTTPS connection.', 'error');
+            // Fallback: If navigator.clipboard is not available or fails (e.g., non-HTTPS)
+            if (document.execCommand && document.queryCommandSupported('copy')) {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = textToCopy;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                try {
+                    document.execCommand('copy');
+                    showToast('Copied to clipboard (fallback)!', 'success');
+                } catch (execErr) {
+                    console.error('Fallback copy failed: ', execErr);
+                } finally {
+                    document.body.removeChild(tempInput);
+                }
+            }
+        }
     };
 
     const saveProfileBtn = document.getElementById('saveProfileBtn');
