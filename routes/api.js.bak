@@ -107,40 +107,43 @@ router.post('/upload', async (req, res) => {
 
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
-                auth.protectApi(req, res, () => { 
-                    if(req.user) user = req.user; 
-                    resolve(); 
+                auth.protectApi(req, res, () => {
+                    if(req.user) user = req.user;
+                    resolve();
                 });
             });
         }
 
         if (!user && req.body.fileRequestSlug) {
-             const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
-             if (reqObj) {
-                 user = await User.findById(reqObj.owner);
-                 req.body.parentId = reqObj.destinationFolder; 
-             }
-        } 
-        else if (!user && process.env.ALLOW_GUEST_UPLOAD !== 'true') {
-             return res.status(401).json({ message: 'Authentication required.' });
+            const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
+            if (reqObj) {
+                user = await User.findById(reqObj.owner);
+                req.body.parentId = reqObj.destinationFolder;
+            }
+        } else if (!user && process.env.ALLOW_GUEST_UPLOAD !== 'true') {
+            return res.status(401).json({ message: 'Authentication required.' });
         }
 
-        let { 
-            filename, contentType, base64, watermarkText, parentId, description, tags, 
-            hidden, expires, limit, password, hint, geo, burn, customAlias, stripMetadata 
+        const {
+            filename, contentType, base64, watermarkText, parentId, description, tags,
+            hidden, expires, limit, password, hint, geo, burn, customAlias, stripMetadata
         } = req.body;
-        
+
+        if (!base64 || !filename || !contentType) {
+            return res.status(400).json({ message: 'Missing required fields: filename, contentType, base64.' });
+        }
+
         let buffer = Buffer.from(base64.split(',')[1], 'base64');
-        
+
         if (contentType.startsWith('image/') && stripMetadata === 'true') {
             buffer = await sharp(buffer).withMetadata(false).toBuffer();
         }
-        
+
         if (contentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
             const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
             image.print(font, 10, image.bitmap.height - 40, watermarkText);
-            buffer = await image.getBufferAsync(jimp.MIME_PNG); 
+            buffer = await image.getBufferAsync(jimp.MIME_PNG);
         }
 
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
@@ -149,11 +152,11 @@ router.post('/upload', async (req, res) => {
         if (user) {
             const duplicate = await File.findOne({ owner: user._id, md5Hash: hash, deletedAt: null });
             if (duplicate) {
-                return res.status(200).json({ 
-                    status: 'success', 
-                    message: 'Duplicate file detected', 
-                    url: `${req.protocol}://${req.get('host')}/w-upload/file/${duplicate.customAlias}`, 
-                    filename: duplicate.customAlias 
+                return res.status(200).json({
+                    status: 'success',
+                    message: 'Duplicate file detected',
+                    url: `${req.protocol}://${req.get('host')}/w-upload/file/${duplicate.customAlias}`,
+                    filename: duplicate.customAlias
                 });
             }
         }
@@ -168,22 +171,24 @@ router.post('/upload', async (req, res) => {
             finalAlias = `${name}_${counter}${ext}`;
             counter++;
         }
-
-        const r2Key = `${user ? user._id : 'guest'}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
         
-        const { r2, PutObjectCommand } = require('../utils/r2');
-        await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
+        const ownerId = user ? user._id.toString() : 'guest';
+        const r2Key = `${ownerId}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
+
+        const uploadCommand = new PutObjectCommand({
+            Bucket: 'wanzofc',
             Key: r2Key,
             Body: buffer,
             ContentType: contentType
-        }));
+        });
+        
+        await r2.send(uploadCommand);
 
         const newFile = new File({
-            originalName: filename, 
-            customAlias: finalAlias, 
-            contentType, 
-            size: buffer.length, 
+            originalName: filename,
+            customAlias: finalAlias,
+            contentType,
+            size: buffer.length,
             storageType: 'r2',
             r2Key: r2Key,
             owner: user ? user._id : null,
@@ -200,7 +205,9 @@ router.post('/upload', async (req, res) => {
             downloadLimit: limit ? parseInt(limit) : undefined
         });
 
-        if (password) newFile.password = await bcrypt.hash(password, 10);
+        if (password) {
+            newFile.password = await bcrypt.hash(password, 10);
+        }
 
         await newFile.save();
 
