@@ -1,7 +1,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <div id="ai-widget-container">
-    <button id="ai-toggle-btn" aria-label="Open AI">
+    <button id="ai-toggle-btn" aria-label="Open AI Assistant">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
     </button>
 
@@ -17,7 +17,7 @@
         
         <div id="ai-messages">
             <div class="ai-msg bot">
-                Hi! I'm your file copilot. I can find, manage, and even modify your files. Tap a command below or type your question.
+                Hi! I'm your file copilot. I can find, manage, and protect your files. Tap a command below or ask me anything.
             </div>
         </div>
 
@@ -28,7 +28,7 @@
         </div>
         
         <div class="ai-input-area">
-            <input type="text" id="ai-input" placeholder="e.g., 'Find all PDFs larger than 5MB'" autocomplete="off">
+            <input type="text" id="ai-input" placeholder="e.g., find all pdf files" autocomplete="off">
             <button id="ai-send-btn"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
@@ -58,7 +58,7 @@
     .ai-suggestions::-webkit-scrollbar { display: none; }
     .suggestion-btn { background: var(--card); border: 1px solid var(--primary); color: var(--primary); padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; flex-shrink: 0; font-weight: 600; white-space: nowrap; }
     .suggestion-btn:hover { background: var(--primary); color: white; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2); }
-    .ai-typing-indicator { padding: 10px 20px; display: flex; gap: 4px; align-self: flex-start; background: var(--bg-secondary); border-radius: 16px; margin-left: 20px; width: fit-content; margin-bottom: 10px; margin-top: 10px; }
+    .ai-typing-indicator { padding: 10px 20px; display: flex; gap: 4px; align-self: flex-start; background: var(--bg-secondary); border-radius: 16px; margin: 10px 20px; width: fit-content; }
     .ai-typing-indicator.hidden { display: none; }
     .ai-typing-indicator span { width: 6px; height: 6px; background: var(--muted-text); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
     .ai-typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
@@ -95,17 +95,19 @@
         const suggestionsBox = document.getElementById('ai-suggestions');
 
         const commands = [
-            "What's my storage usage?",
-            "Find documents that mention 'invoice'",
-            "Show me my most downloaded files",
-            "Create folder 'Project X'",
-            "Rename file 'draft.txt' to 'final.txt'",
-            "Move 'report.pdf' to 'Archive'",
-            "Delete file 'temp.jpg'",
-            "Share 'presentation.pptx' with user@example.com",
-            "Show me files uploaded today",
-            "Empty my trash",
-            "Help"
+            "Who am I?",
+            "Storage Usage",
+            "Show my most downloaded files",
+            "Summarize [filename]",
+            "Find documents that mention 'report'",
+            "Find all PDF files larger than 5MB",
+            "Rename [filename] to new_name.txt",
+            "Move [filename] to Archive",
+            "Delete [filename]",
+            "Protect [filename] with password secret",
+            "Create folder 'New Project'",
+            "Share [filename] with user@example.com",
+            "Empty my trash"
         ];
 
         const renderSuggestions = () => {
@@ -141,21 +143,22 @@
             const div = document.createElement('div');
             div.className = `ai-msg ${type}`;
             div.innerHTML = type === 'bot' ? marked.parse(text) : text;
-            
             if (type === 'bot' && logId) {
                 const fbDiv = document.createElement('div');
                 fbDiv.className = 'ai-feedback';
                 fbDiv.innerHTML = `<button onclick="rateMsg(this, '${logId}', 'like')"><i class="fa-regular fa-thumbs-up"></i></button><button onclick="rateMsg(this, '${logId}', 'dislike')"><i class="fa-regular fa-thumbs-down"></i></button>`;
                 div.appendChild(fbDiv);
             }
-            
             msgs.appendChild(div);
             msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
         };
 
         window.rateMsg = (btn, id, type) => {
             const parent = btn.parentElement;
-            parent.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.pointerEvents = 'none'; });
+            parent.querySelectorAll('button').forEach(b => {
+                b.disabled = true;
+                b.style.pointerEvents = 'none';
+            });
             const icon = btn.querySelector('i');
             icon.classList.remove('fa-regular');
             icon.classList.add('fa-solid');
@@ -166,12 +169,16 @@
         const getContext = () => ({
             title: document.title,
             route: window.location.pathname,
-            language: navigator.language || 'en',
+            language: navigator.language || 'en'
         });
 
         const handleSend = async () => {
-            const text = input.value.trim();
+            let text = input.value.trim();
             if (!text) return;
+
+            if (text.includes('[filename]') && window.contextTarget) {
+                text = text.replace('[filename]', `"${window.contextTarget.dataset.name}"`);
+            }
             
             addMsg(text, 'user');
             input.value = '';
@@ -191,15 +198,16 @@
 
                 if (data.action) {
                     if (data.action.type === 'navigate') {
-                        setTimeout(() => window.location.href = data.action.url, 1500);
+                        addMsg('<i class="fa-solid fa-circle-arrow-right"></i> Redirecting...', 'bot');
+                        setTimeout(() => window.location.href = data.action.url, 1000);
                     } else if (data.action.type === 'copy') {
                         navigator.clipboard.writeText(data.action.text);
-                        addMsg("I've copied the link to your clipboard!", 'bot');
+                        addMsg('<i class="fa-solid fa-copy"></i> Link copied to clipboard.', 'bot');
                     }
                 }
             } catch (e) {
                 typing.classList.add('hidden');
-                addMsg("I'm having trouble connecting right now. Please try again later.", 'bot');
+                addMsg("I'm having trouble connecting right now.", 'bot');
             }
         };
 

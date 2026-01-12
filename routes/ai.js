@@ -1,247 +1,408 @@
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+const express = require('express');
+const router = express.Router();
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const File = require('../models/file');
+const User = require('../models/user');
+const Team = require('../models/team');
+const FileRequest = require('../models/fileRequest');
+const AiLog = require('../models/aiLog');
+const { extractContent, summarizeText, searchInText } = require('../utils/fileProcessor');
+const { translateText } = require('../utils/tr');
+const { getDocsContent } = require('../utils/docsLoader');
+const { r2, GetObjectCommand } = require('../utils/r2');
+const auth = require('../middleware/auth');
+const { getUserProfile, getStorageStats, searchUsers, getTeamData, getActivityLog, AI_SCHEMA_MAP } = require('../utils/aiHelpers');
+const { formatFileResults, parseDateRange, searchFileContent, findSimilarFilesByName } = require('../utils/aiSearchHelpers');
 
-<div id="ai-widget-container">
-    <button id="ai-toggle-btn" aria-label="Open AI Assistant">
-        <i class="fa-solid fa-wand-magic-sparkles"></i>
-    </button>
+function maskPII(text) {
+    return text.replace(/\b[\w.-]+@[\w.-]+\.\w{2,4}\b/g, '[EMAIL PROTECTED]').replace(/\b(\+62|0)[0-9]{9,12}\b/g, '[PHONE PROTECTED]');
+}
 
-    <div id="ai-chat-window" class="hidden">
-        <div class="ai-header">
-            <div class="ai-title">
-                <i class="fa-solid fa-robot"></i>
-                <span>AI Assistant</span>
-                <span class="ai-status">Online</span>
-            </div>
-            <button id="ai-close-btn"><i class="fa-solid fa-chevron-down"></i></button>
-        </div>
+function cleanEntity(str) {
+    if (!str) return '';
+    return str.trim().replace(/^['"]|['"]$/g, '');
+}
+
+router.post('/chat', auth.protectApi, async (req, res) => {
+    try {
+        const { message, context } = req.body;
+        const userId = req.user.id;
+        const userTeams = req.user.teams || [];
+        const userRole = req.user.role;
+        const userLang = context.language ? context.language.split('-')[0] : 'en';
+        const englishQuery = await translateText(message, 'en', 'auto');
+        const cleanMsg = englishQuery.toLowerCase().trim();
+
+        let responseText = "";
+        let action = null;
+        let match;
+
+        // --- NEW Regex-based command parsing ---
+
+        if (match = cleanMsg.match(/rename file (.+?) to (.+)/)) {
+            const oldName = cleanEntity(match[1]);
+            const newName = cleanEntity(match[2]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${oldName}$`, 'i') }, deletedAt: null }, { originalName: newName });
+            responseText = file ? `Renamed "${oldName}" to "${newName}".` : `File "${oldName}" not found.`;
+        }
         
-        <div id="ai-messages">
-            <div class="ai-msg bot">
-                Hi! I'm your file copilot. I can find, manage, and protect your files. Tap a command below or ask me anything.
-            </div>
-        </div>
-
-        <div id="ai-suggestions" class="ai-suggestions"></div>
-
-        <div class="ai-typing-indicator hidden" id="ai-typing">
-            <span></span><span></span><span></span>
-        </div>
+        else if (match = cleanMsg.match(/move file (.+?) to (folder )?(.+)/)) {
+            const fileName = cleanEntity(match[1]);
+            const folderName = cleanEntity(match[3]);
+            const fileToMove = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            const targetFolder = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${folderName}$`, 'i') }, isFolder: true, deletedAt: null });
+            if (!fileToMove) responseText = `File "${fileName}" not found.`;
+            else if (!targetFolder) responseText = `Folder "${folderName}" not found.`;
+            else {
+                fileToMove.parentId = targetFolder._id;
+                await fileToMove.save();
+                responseText = `Moved "${fileName}" to "${folderName}".`;
+            }
+        }
         
-        <div class="ai-input-area">
-            <input type="text" id="ai-input" placeholder="e.g., find all pdf files" autocomplete="off">
-            <button id="ai-send-btn"><i class="fa-solid fa-paper-plane"></i></button>
-        </div>
-    </div>
-</div>
-
-<style>
-    #ai-widget-container { position: fixed; bottom: 25px; right: 25px; z-index: 10000; font-family: system-ui, -apple-system, sans-serif; }
-    #ai-toggle-btn { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; align-items: center; justify-content: center; }
-    #ai-toggle-btn:hover { transform: scale(1.1) rotate(10deg); }
-    #ai-chat-window { width: 380px; height: 600px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; position: absolute; bottom: 80px; right: 0; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.2); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(20px) scale(0.95); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); transform-origin: bottom right; }
-    #ai-chat-window:not(.hidden) { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
-    .ai-header { padding: 16px; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-    .ai-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1rem; }
-    .ai-status { font-size: 0.7rem; background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; }
-    #ai-close-btn { background: none; border: none; color: white; font-size: 18px; cursor: pointer; transition: transform 0.2s; }
-    #ai-close-btn:hover { transform: rotate(90deg); }
-    #ai-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: var(--bg); scroll-behavior: smooth; }
-    .ai-msg { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 0.95rem; line-height: 1.5; word-wrap: break-word; position: relative; animation: slideUp 0.3s ease; }
-    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .ai-msg.bot { background: var(--bg-secondary); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
-    .ai-msg.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .ai-msg p { margin: 0 0 8px 0; }
-    .ai-msg p:last-child { margin: 0; }
-    .ai-msg code { background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
-    .ai-msg pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; margin-top: 8px; border: 1px solid rgba(255,255,255,0.1); }
-    .ai-suggestions { display: flex; gap: 8px; padding: 12px 16px; overflow-x: auto; background: var(--bg); border-top: 1px solid var(--border); scrollbar-width: none; white-space: nowrap; flex-shrink: 0; }
-    .ai-suggestions::-webkit-scrollbar { display: none; }
-    .suggestion-btn { background: var(--card); border: 1px solid var(--primary); color: var(--primary); padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; flex-shrink: 0; font-weight: 600; white-space: nowrap; }
-    .suggestion-btn:hover { background: var(--primary); color: white; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2); }
-    .ai-typing-indicator { padding: 10px 20px; display: flex; gap: 4px; align-self: flex-start; background: var(--bg-secondary); border-radius: 16px; margin: 10px 20px; width: fit-content; }
-    .ai-typing-indicator.hidden { display: none; }
-    .ai-typing-indicator span { width: 6px; height: 6px; background: var(--muted-text); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
-    .ai-typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-    .ai-typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-    @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-    .ai-input-area { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: var(--card); align-items: center; flex-shrink: 0; }
-    #ai-input { flex: 1; padding: 12px 16px; border-radius: 25px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none; font-size: 0.95rem; transition: border-color 0.2s; }
-    #ai-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-    #ai-send-btn { background: var(--primary); border: none; color: white; border-radius: 50%; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: transform 0.2s; }
-    #ai-send-btn:hover { transform: scale(1.1); }
-    .ai-feedback { display: flex; gap: 10px; margin-top: 8px; justify-content: flex-end; opacity: 0.7; }
-    .ai-feedback button { background: none; border: none; cursor: pointer; color: var(--muted-text); transition: 0.2s; padding: 4px; font-size: 1.1rem; }
-    .ai-feedback button:hover { transform: scale(1.2); color: var(--text); opacity: 1; }
-    .active-like { color: #22c55e !important; opacity: 1 !important; }
-    .active-dislike { color: #ef4444 !important; opacity: 1 !important; }
-
-    @media (max-width: 480px) {
-        #ai-widget-container { right: 20px; bottom: 20px; }
-        #ai-chat-window { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; border-radius: 0; z-index: 99999; transform-origin: center; }
-        .ai-header { padding: 15px 20px; padding-top: max(15px, env(safe-area-inset-top)); }
-        .ai-input-area { padding-bottom: max(15px, env(safe-area-inset-bottom)); }
-    }
-</style>
-
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const widget = document.getElementById('ai-chat-window');
-        const toggleBtn = document.getElementById('ai-toggle-btn');
-        const closeBtn = document.getElementById('ai-close-btn');
-        const input = document.getElementById('ai-input');
-        const sendBtn = document.getElementById('ai-send-btn');
-        const msgs = document.getElementById('ai-messages');
-        const typing = document.getElementById('ai-typing');
-        const suggestionsBox = document.getElementById('ai-suggestions');
-
-        // NEW, EXPANDED COMMAND LIST
-        const newCommands = [
-            "Who am I?",
-            "Storage Usage",
-            "Show my most downloaded files",
-            "Summarize [filename]",
-            "Find documents that mention 'report'",
-            "Find all PDF files larger than 5MB",
-            "Rename [filename] to new_name.txt",
-            "Move [filename] to Archive",
-            "Delete [filename]",
-            "Protect [filename] with password secret",
-            "Create folder 'New Project'",
-            "Share [filename] with user@example.com",
-            "Empty my trash"
-        ];
+        else if (match = cleanMsg.match(/^(delete|trash) file (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { deletedAt: new Date() });
+            responseText = file ? `Moved "${fileName}" to trash.` : `File "${fileName}" not found.`;
+        }
         
-        // ORIGINAL COMMAND LIST
-        const oldCommands = [
-            "Who am I?",
-            "Storage Usage",
-            "Read file",
-            "My Team",
-            "Activity Log",
-            "Search User",
-            "Go to Settings"
-        ];
+        else if (match = cleanMsg.match(/add tag (.+?) to (file )?(.+)/)) {
+            const tagName = cleanEntity(match[1]);
+            const fileName = cleanEntity(match[3]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { $addToSet: { tags: tagName } });
+            responseText = file ? `Added tag "${tagName}" to "${fileName}".` : `File "${fileName}" not found.`;
+        }
+
+        else if (match = cleanMsg.match(/remove tag (.+?) from (file )?(.+)/)) {
+            const tagName = cleanEntity(match[1]);
+            const fileName = cleanEntity(match[3]);
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { $pull: { tags: tagName } });
+            responseText = file ? `Removed tag "${tagName}" from "${fileName}".` : `File "${fileName}" not found.`;
+        }
         
-        // COMBINED LIST
-        const commands = [...new Set([...newCommands, ...oldCommands])]; // Menggabungkan dan menghilangkan duplikat
+        else if (match = cleanMsg.match(/protect (file )?(.+?) with password (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const password = cleanEntity(match[3]);
+            const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            if (!file) responseText = `File "${fileName}" not found.`;
+            else {
+                file.password = await bcrypt.hash(password, 10);
+                await file.save();
+                responseText = `"${fileName}" is now password protected.`;
+            }
+        }
+        
+        else if (match = cleanMsg.match(/^create (a new )?folder (named )?(.+)/)) {
+            const folderName = cleanEntity(match[3]);
+            await new File({ originalName: folderName, customAlias: `folder_${Date.now()}`, contentType: 'application/vnd.google-apps.folder', size: 0, owner: userId, isFolder: true }).save();
+            responseText = `Folder "${folderName}" created successfully.`;
+        }
+        
+        else if (match = cleanMsg.match(/share (file )?(.+?) with (.+)/)) {
+            const fileName = cleanEntity(match[2]);
+            const targetIdentifier = cleanEntity(match[3]);
+            const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+            const targetUser = await User.findOne({ $or: [{ email: targetIdentifier }, { username: targetIdentifier }] });
+            if(!file) responseText = `File "${fileName}" not found.`;
+            else if (!targetUser) responseText = `User "${targetIdentifier}" not found.`;
+            else {
+                await File.updateOne({ _id: file._id }, { $addToSet: { collaborators: targetUser._id } });
+                responseText = `Shared "${fileName}" with ${targetUser.username}.`;
+            }
+        }
 
-        const renderSuggestions = () => {
-            suggestionsBox.innerHTML = '';
-            commands.forEach(cmd => {
-                const btn = document.createElement('button');
-                btn.className = 'suggestion-btn';
-                btn.textContent = cmd;
-                btn.addEventListener('click', () => {
-                    input.value = cmd;
-                    handleSend();
-                });
-                suggestionsBox.appendChild(btn);
-            });
-        };
+        else if (match = cleanMsg.match(/add user (.+?) to the (.+?) team/)) {
+            const username = cleanEntity(match[1]);
+            const teamName = cleanEntity(match[2]);
+            const team = await Team.findOne({ name: { $regex: new RegExp(`^${teamName}$`, 'i') }, members: userId });
+            const userToAdd = await User.findOne({ username });
+            if(!team) responseText = `Team "${teamName}" not found or you're not a member.`;
+            else if (!userToAdd) responseText = `User "${username}" not found.`;
+            else {
+                await Team.updateOne({ _id: team._id }, { $addToSet: { members: userToAdd._id } });
+                await User.updateOne({ _id: userToAdd._id }, { $addToSet: { teams: team._id } });
+                responseText = `Added ${username} to the ${team.name} team.`;
+            }
+        }
 
-        renderSuggestions();
-
-        const toggleWidget = () => {
-            const isHidden = widget.classList.contains('hidden');
-            if (isHidden) {
-                widget.classList.remove('hidden');
-                setTimeout(() => input.focus(), 300);
+        else if (match = cleanMsg.match(/generate a file request link for (.+)/)) {
+            const label = cleanEntity(match[1]);
+            const slug = Math.random().toString(36).substring(2, 10);
+            const reqFile = new FileRequest({ owner: userId, slug, label });
+            await reqFile.save();
+            const link = `${req.protocol}://${req.get('host')}/req/${slug}`;
+            responseText = `File request link for "${label}" created: ${link}`;
+            action = { type: 'copy', text: link };
+        }
+        
+        else if (cleanMsg.match(/empty my trash/)) {
+            await File.deleteMany({ owner: userId, deletedAt: { $ne: null } });
+            responseText = "Your trash bin has been emptied.";
+        }
+        
+        else if (match = cleanMsg.match(/^(summarize|read|open) (file )?(.+)/)) {
+            const actionType = match[1];
+            const fileName = cleanEntity(match[3]);
+            if (fileName === '[filename]') {
+                responseText = `Please specify a filename to ${actionType}.`;
             } else {
-                widget.classList.add('hidden');
-            }
-        };
-
-        toggleBtn.addEventListener('click', toggleWidget);
-        closeBtn.addEventListener('click', toggleWidget);
-
-        const addMsg = (text, type, logId = null) => {
-            const div = document.createElement('div');
-            div.className = `ai-msg ${type}`;
-            div.innerHTML = type === 'bot' ? marked.parse(text) : text;
-            if (type === 'bot' && logId) {
-                const fbDiv = document.createElement('div');
-                fbDiv.className = 'ai-feedback';
-                fbDiv.innerHTML = `<button onclick="rateMsg(this, '${logId}', 'like')"><i class="fa-regular fa-thumbs-up"></i></button><button onclick="rateMsg(this, '${logId}', 'dislike')"><i class="fa-regular fa-thumbs-down"></i></button>`;
-                div.appendChild(fbDiv);
-            }
-            msgs.appendChild(div);
-            msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
-        };
-
-        window.rateMsg = (btn, id, type) => {
-            const parent = btn.parentElement;
-            parent.querySelectorAll('button').forEach(b => {
-                b.disabled = true;
-                b.style.pointerEvents = 'none';
-            });
-            const icon = btn.querySelector('i');
-            icon.classList.remove('fa-regular');
-            icon.classList.add('fa-solid');
-            btn.classList.add(type === 'like' ? 'active-like' : 'active-dislike');
-            fetch(`/api/ai/feedback/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) }).catch(console.error);
-        };
-
-        const getContext = () => {
-            const errorEl = document.querySelector('.alert-danger, .error-message, .toast.error');
-            return {
-                title: document.title,
-                route: window.location.pathname,
-                hasError: !!errorEl,
-                errorMessage: errorEl ? errorEl.innerText : null,
-                isMobile: window.innerWidth <= 768,
-                language: navigator.language || 'en',
-                theme: document.documentElement.getAttribute('data-theme') || 'light'
-            };
-        };
-
-        const handleSend = async () => {
-            let text = input.value.trim();
-            if (!text) return;
-            
-            // NEW: Contextual command filling
-            if (text.includes('[filename]') && window.contextTarget && window.contextTarget.dataset.name) {
-                text = text.replace(/\[filename\]/g, `"${window.contextTarget.dataset.name}"`);
-            }
-            
-            addMsg(text, 'user');
-            input.value = '';
-            typing.classList.remove('hidden');
-            msgs.scrollTop = msgs.scrollHeight;
-
-            try {
-                const res = await fetch('/api/ai/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text, context: getContext() })
-                });
-                
-                const data = await res.json();
-                typing.classList.add('hidden');
-                addMsg(data.response, 'bot', data.logId);
-
-                if (data.action) {
-                    if (data.action.type === 'navigate') {
-                        addMsg('<i class="fa-solid fa-circle-arrow-right"></i> Redirecting...', 'bot');
-                        setTimeout(() => window.location.href = data.action.url, 1000);
-                    } else if (data.action.type === 'copy') {
-                        navigator.clipboard.writeText(data.action.text);
-                        addMsg('<i class="fa-solid fa-copy"></i> Link copied to clipboard.', 'bot');
-                    } else if (data.action.type === 'fill_form') {
-                        document.querySelectorAll(data.action.target).forEach(el => {
-                            el.value = data.action.value;
-                            el.style.transition = 'background 0.5s';
-                            el.style.backgroundColor = '#dcfce7';
-                            setTimeout(() => el.style.backgroundColor = '', 1500);
-                        });
+                const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+                if (!file) {
+                    responseText = `File "${fileName}" not found.`;
+                } else {
+                    const content = await extractContent(file);
+                    if (actionType === 'summarize') {
+                        responseText = `**Summary of ${file.originalName}:**\n\n${summarizeText(content)}`;
+                    } else {
+                        responseText = `**${file.originalName}**:\n\`\`\`\n${content.substring(0, 800)}\n\`\`\``;
                     }
                 }
-            } catch (e) {
-                typing.classList.add('hidden');
-                addMsg("I'm having trouble connecting right now.", 'bot');
             }
-        };
+        }
+        
+        // --- ORIGINAL CODE (KEPT AS FALLBACK) ---
 
-        sendBtn.addEventListener('click', handleSend);
-        input.addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
-    });
-</script>
+        else if (cleanMsg.startsWith('find photos with') || cleanMsg.startsWith('show me photos of')) {
+            const query = cleanMsg.replace(/^(find photos with|show me photos of)/, '').trim();
+            responseText = "Image content search is an advanced feature. As a fallback, I'm searching user tags and descriptions for your query...\n\n";
+            const files = await File.find({ owner: userId, contentType: /^image\//, deletedAt: null, $or: [{ tags: query }, { description: new RegExp(query, 'i') }] });
+            responseText += formatFileResults(files);
+        }
+        
+        else if (cleanMsg.startsWith('find documents that mention')) {
+            const query = cleanMsg.replace('find documents that mention', '').trim();
+            const files = await searchFileContent(userId, userTeams, query);
+            responseText = `Found ${files.length} documents mentioning "${query}":\n\n` + formatFileResults(files);
+        }
+        
+        else if (cleanMsg.startsWith('show me all files uploaded')) {
+            const dateRange = parseDateRange(cleanMsg);
+            if(dateRange) {
+                const files = await File.find({ owner: userId, createdAt: dateRange, deletedAt: null });
+                responseText = `Found ${files.length} files matching that date range:\n\n` + formatFileResults(files);
+            } else {
+                responseText = "I couldn't understand that date range. Try 'today', 'yesterday', or 'last 7 days'.";
+            }
+        }
+        
+        else if (cleanMsg.startsWith('find all')) {
+            let dbQuery = { owner: userId, deletedAt: null };
+            const typeMatch = cleanMsg.match(/(pdf|image|video|document) files/);
+            const tagMatch = cleanMsg.match(/tagged as (.+?)( larger| smaller|$)/);
+            const sizeMatch = cleanMsg.match(/(larger|smaller) than (\d+)\s?(mb|gb|kb)/);
+
+            if (typeMatch) {
+                if(typeMatch[1] === 'image') dbQuery.contentType = /^image\//;
+                else if(typeMatch[1] === 'video') dbQuery.contentType = /^video\//;
+                else dbQuery.contentType = new RegExp(typeMatch[1], 'i');
+            }
+            if (tagMatch) dbQuery.tags = tagMatch[1].trim();
+            if (sizeMatch) {
+                const size = parseInt(sizeMatch[2]);
+                const unit = sizeMatch[3];
+                const multiplier = unit === 'gb' ? 1024*1024*1024 : unit === 'mb' ? 1024*1024 : 1024;
+                dbQuery.size = sizeMatch[1] === 'larger' ? { $gt: size * multiplier } : { $lt: size * multiplier };
+            }
+            const files = await File.find(dbQuery);
+            responseText = `Found ${files.length} files matching your combined filter:\n\n` + formatFileResults(files);
+        }
+        
+        else if (cleanMsg.startsWith('find files similar to')) {
+            const fileName = cleanMsg.replace('find files similar to', '').trim();
+            const files = await findSimilarFilesByName(userId, fileName);
+            responseText = `Found ${files.length} files with names similar to "${fileName}":\n\n` + formatFileResults(files);
+        }
+
+        else if (cleanMsg.startsWith('search for')) {
+            const teamMatch = cleanMsg.match(/search for (.+?) in all my teams/);
+            if (teamMatch) {
+                const query = teamMatch[1].trim();
+                const teams = await Team.find({ _id: { $in: userTeams } });
+                const memberIds = [...new Set(teams.flatMap(t => t.members))];
+                const files = await File.find({ owner: { $in: memberIds }, originalName: new RegExp(query, 'i'), deletedAt: null });
+                responseText = `Found ${files.length} files for "${query}" across all your teams:\n\n` + formatFileResults(files);
+            }
+        }
+
+        else if (cleanMsg.startsWith('sort my files by')) {
+            let sort = {};
+            if (cleanMsg.includes('size')) sort.size = cleanMsg.includes('largest') ? -1 : 1;
+            else if (cleanMsg.includes('name')) sort.originalName = cleanMsg.includes('z to a') ? -1 : 1;
+            else if (cleanMsg.includes('date')) sort.createdAt = cleanMsg.includes('newest') ? -1 : 1;
+            const files = await File.find({ owner: userId, parentId: null, deletedAt: null }).sort(sort).limit(10);
+            responseText = `Here are your top files sorted as requested:\n\n` + formatFileResults(files);
+        }
+
+        else if (cleanMsg.startsWith('show me my most')) {
+            let sort = {};
+            if (cleanMsg.includes('downloaded')) sort.downloads = -1;
+            else if (cleanMsg.includes('recent')) sort.createdAt = -1;
+            const files = await File.find({ owner: userId, deletedAt: null }).sort(sort).limit(5);
+            responseText = `Here are your most ${cleanMsg.includes('downloaded') ? 'downloaded' : 'recent'} files:\n\n` + formatFileResults(files);
+        }
+        
+        else if (cleanMsg.startsWith('find what user')) {
+            const username = cleanMsg.replace('find what user', '').replace('has shared publicly', '').trim();
+            const targetUser = await User.findOne({ username, isPublicProfile: true });
+            if (!targetUser) responseText = `User "${username}" not found or their profile is private.`;
+            else {
+                const files = await File.find({ owner: targetUser._id, isHidden: false, deletedAt: null, password: { $exists: false } }).limit(10);
+                responseText = `Here are the latest public files from ${username}:\n\n` + formatFileResults(files);
+            }
+        }
+        
+        else if (cleanMsg.startsWith('find file')) {
+            const filename = cleanMsg.replace('find file', '').trim();
+            const file = await File.findOne({ owner: userId, originalName: { $regex: filename, $options: 'i' }, deletedAt: null });
+            if (file) {
+                responseText = `I found "${file.originalName}". What would you like to do with it? (e.g., 'summarize it', 'delete it')`;
+                action = { type: 'context', fileId: file._id.toString() };
+            } else {
+                responseText = `I couldn't find a file named "${filename}".`;
+            }
+        }
+        
+        else if (cleanMsg.startsWith('rename file')) {
+            const parts = cleanMsg.replace('rename file', '').split(' to ');
+            if (parts.length === 2) {
+                const oldName = parts[0].trim();
+                const newName = parts[1].trim();
+                const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${oldName}$`, 'i') }, deletedAt: null }, { originalName: newName });
+                responseText = file ? `Renamed "${oldName}" to "${newName}".` : `File "${oldName}" not found.`;
+            }
+        }
+        
+        else if (cleanMsg.startsWith('move file')) {
+            const parts = cleanMsg.replace('move file', '').split(' to ');
+            if (parts.length === 2) {
+                const fileName = parts[0].trim();
+                const folderName = parts[1].trim();
+                const fileToMove = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null });
+                const targetFolder = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${folderName}$`, 'i') }, isFolder: true, deletedAt: null });
+                if (!fileToMove) responseText = `File "${fileName}" not found.`;
+                else if (!targetFolder) responseText = `Folder "${folderName}" not found.`;
+                else {
+                    fileToMove.parentId = targetFolder._id;
+                    await fileToMove.save();
+                    responseText = `Moved "${fileName}" to "${folderName}".`;
+                }
+            }
+        }
+        
+        else if (cleanMsg.startsWith('delete file') || cleanMsg.startsWith('trash file')) {
+            const fileName = cleanMsg.replace(/^(delete|trash) file/, '').trim();
+            const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${fileName}$`, 'i') }, deletedAt: null }, { deletedAt: new Date() });
+            responseText = file ? `Moved "${fileName}" to trash.` : `File "${fileName}" not found.`;
+        }
+        
+        else if (cleanMsg.includes(' tag ')) {
+            const addMatch = cleanMsg.match(/add tag (.+?) to (.+)/);
+            const removeMatch = cleanMsg.match(/remove tag (.+?) from (.+)/);
+            if(addMatch) {
+                const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${addMatch[2].trim()}$`, 'i') }, deletedAt: null }, { $addToSet: { tags: addMatch[1].trim() } });
+                responseText = file ? `Added tag to "${file.originalName}".` : `File not found.`;
+            } else if (removeMatch) {
+                const file = await File.findOneAndUpdate({ owner: userId, originalName: { $regex: new RegExp(`^${removeMatch[2].trim()}$`, 'i') }, deletedAt: null }, { $pull: { tags: removeMatch[1].trim() } });
+                responseText = file ? `Removed tag from "${file.originalName}".` : `File not found.`;
+            }
+        }
+        
+        else if (cleanMsg.startsWith('protect ')) {
+            const match = cleanMsg.match(/protect (.+?) with password (.+)/);
+            if (match) {
+                const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${match[1].trim()}$`, 'i') }, deletedAt: null });
+                if (!file) responseText = `File not found.`;
+                else {
+                    file.password = await bcrypt.hash(match[2].trim(), 10);
+                    await file.save();
+                    responseText = `"${file.originalName}" is now password protected.`;
+                }
+            }
+        }
+        
+        else if (cleanMsg.startsWith('create folder')) {
+            const folderName = cleanMsg.replace('create folder', '').trim();
+            await new File({ originalName: folderName, customAlias: `folder_${Date.now()}`, contentType: 'application/vnd.google-apps.folder', size: 0, owner: userId, isFolder: true }).save();
+            responseText = `Folder "${folderName}" created.`;
+        }
+        
+        else if (cleanMsg.startsWith('share ')) {
+            const match = cleanMsg.match(/share (.+?) with (.+)/);
+            if(match) {
+                const file = await File.findOne({ owner: userId, originalName: { $regex: new RegExp(`^${match[1].trim()}$`, 'i') }, deletedAt: null });
+                const targetUser = await User.findOne({ $or: [{ email: match[2].trim() }, { username: match[2].trim() }] });
+                if(!file) responseText = `File not found.`;
+                else if (!targetUser) responseText = `User not found.`;
+                else {
+                    await File.updateOne({ _id: file._id }, { $addToSet: { collaborators: targetUser._id } });
+                    responseText = `Shared "${file.originalName}" with ${targetUser.username}.`;
+                }
+            }
+        }
+
+        else if (cleanMsg.startsWith('add user')) {
+            const match = cleanMsg.match(/add user (.+?) to the (.+?) team/);
+            if(match) {
+                const team = await Team.findOne({ name: { $regex: new RegExp(`^${match[2].trim()}$`, 'i') }, members: userId });
+                const userToAdd = await User.findOne({ username: match[1].trim() });
+                if(!team) responseText = `Team not found or you're not a member.`;
+                else if (!userToAdd) responseText = `User not found.`;
+                else {
+                    await Team.updateOne({ _id: team._id }, { $addToSet: { members: userToAdd._id } });
+                    await User.updateOne({ _id: userToAdd._id }, { $addToSet: { teams: team._id } });
+                    responseText = `Added ${userToAdd.username} to the ${team.name} team.`;
+                }
+            }
+        }
+
+        else if (cleanMsg.includes('generate a file request link')) {
+            const label = cleanMsg.replace('generate a file request link for', '').trim();
+            const slug = Math.random().toString(36).substring(2, 10);
+            const reqFile = new FileRequest({ owner: userId, slug, label });
+            await reqFile.save();
+            const link = `${req.protocol}://${req.get('host')}/req/${slug}`;
+            responseText = `File request link for "${label}" created: ${link}`;
+            action = { type: 'copy', text: link };
+        }
+        
+        else if (cleanMsg.includes('empty my trash')) {
+            await File.deleteMany({ owner: userId, deletedAt: { $ne: null } });
+            responseText = "Your trash bin has been emptied.";
+        }
+        
+        else if (cleanMsg.includes('who am i')) { responseText = `Hello **${(await getUserProfile(userId)).username}**!`; }
+        else if (cleanMsg.includes('storage')) { const s = await getStorageStats(userId); responseText = `Used: **${s.used}** of **${s.limit}**`; }
+        else if (cleanMsg.includes('activity')) { responseText = `**Recent Activity:**\n${await getActivityLog(userId)}`; }
+        else if (cleanMsg.includes('team')) { responseText = `**Team Info:**\n${await getTeamData(userId)}`; }
+        else if (cleanMsg.startsWith('search user')) { responseText = `**Search Results:**\n${await searchUsers(cleanMsg.replace('search user', '').trim(), userRole)}`; }
+        else if (cleanMsg.startsWith('read file')) { const f = await File.findOne({ owner: userId, originalName: { $regex: cleanMsg.replace('read file', '').trim(), $options: 'i' } }); responseText = f ? `**${f.originalName}**:\n${(await extractContent(f)).substring(0, 500)}...` : 'File not found.'; }
+        else if (cleanMsg.startsWith('summarize')) { const f = await File.findOne({ owner: userId, originalName: { $regex: cleanMsg.replace('summarize', '').trim(), $options: 'i' } }); responseText = f ? `**Summary:**\n${summarizeText(await extractContent(f))}` : 'File not found.'; }
+        else if (cleanMsg.includes('go to')) { action = { type: 'navigate', url: cleanMsg.includes('settings') ? '/profile' : '/dashboard' }; responseText = "Navigating..."; }
+        else if (cleanMsg.includes('help')) { responseText = `**Available Actions:**\n- Rename/Move/Delete file\n- Create folder\n- Share file\n- Empty trash\n- Find/Search files`; }
+        else { responseText = `I'm sorry, I don't understand that command. Try "help" for a list of actions.`; }
+
+        const finalResponse = await translateText(responseText, userLang, 'en');
+        const maskedResponse = maskPII(finalResponse);
+
+        const log = new AiLog({ user: userId, query: message, response: maskedResponse, ip: req.ip });
+        await log.save();
+
+        res.json({ response: maskedResponse, action, logId: log._id });
+    } catch (error) {
+        console.error("AI Chat Error:", error);
+        res.status(500).json({ response: "A system error occurred." });
+    }
+});
+
+router.post('/feedback/:id', auth.protectApi, async (req, res) => {
+    try {
+        const { type } = req.body; 
+        await AiLog.findByIdAndUpdate(req.params.id, { feedback: type });
+        res.json({ message: 'Feedback received' });
+    } catch (e) {
+        res.status(500).json({ message: 'Error' });
+    }
+});
+
+module.exports = router;
