@@ -17,7 +17,7 @@
         
         <div id="ai-messages">
             <div class="ai-msg bot">
-                Hi! I'm your file copilot. I can find, manage, and even modify your files. Tap a command below or type your question.
+                Hi! I can help you manage files, check storage, or navigate the app. Tap a command below or type your question.
             </div>
         </div>
 
@@ -28,7 +28,7 @@
         </div>
         
         <div class="ai-input-area">
-            <input type="text" id="ai-input" placeholder="e.g., 'Find all PDFs larger than 5MB'" autocomplete="off">
+            <input type="text" id="ai-input" placeholder="Type a message..." autocomplete="off">
             <button id="ai-send-btn"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
@@ -36,39 +36,51 @@
 
 <style>
     #ai-widget-container { position: fixed; bottom: 25px; right: 25px; z-index: 10000; font-family: system-ui, -apple-system, sans-serif; }
+    
     #ai-toggle-btn { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; align-items: center; justify-content: center; }
     #ai-toggle-btn:hover { transform: scale(1.1) rotate(10deg); }
+    
     #ai-chat-window { width: 380px; height: 600px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; position: absolute; bottom: 80px; right: 0; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.2); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(20px) scale(0.95); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); transform-origin: bottom right; }
     #ai-chat-window:not(.hidden) { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
+    
     .ai-header { padding: 16px; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
     .ai-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1rem; }
     .ai-status { font-size: 0.7rem; background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; }
     #ai-close-btn { background: none; border: none; color: white; font-size: 18px; cursor: pointer; transition: transform 0.2s; }
     #ai-close-btn:hover { transform: rotate(90deg); }
+    
     #ai-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: var(--bg); scroll-behavior: smooth; }
+    
     .ai-msg { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 0.95rem; line-height: 1.5; word-wrap: break-word; position: relative; animation: slideUp 0.3s ease; }
     @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
     .ai-msg.bot { background: var(--bg-secondary); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
     .ai-msg.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    
     .ai-msg p { margin: 0 0 8px 0; }
     .ai-msg p:last-child { margin: 0; }
     .ai-msg code { background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
     .ai-msg pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; margin-top: 8px; border: 1px solid rgba(255,255,255,0.1); }
+    
     .ai-suggestions { display: flex; gap: 8px; padding: 12px 16px; overflow-x: auto; background: var(--bg); border-top: 1px solid var(--border); scrollbar-width: none; white-space: nowrap; flex-shrink: 0; }
     .ai-suggestions::-webkit-scrollbar { display: none; }
+    
     .suggestion-btn { background: var(--card); border: 1px solid var(--primary); color: var(--primary); padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; flex-shrink: 0; font-weight: 600; white-space: nowrap; }
     .suggestion-btn:hover { background: var(--primary); color: white; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2); }
+    
     .ai-typing-indicator { padding: 10px 20px; display: flex; gap: 4px; align-self: flex-start; background: var(--bg-secondary); border-radius: 16px; margin-left: 20px; width: fit-content; margin-bottom: 10px; margin-top: 10px; }
     .ai-typing-indicator.hidden { display: none; }
     .ai-typing-indicator span { width: 6px; height: 6px; background: var(--muted-text); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
     .ai-typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
     .ai-typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
     @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    
     .ai-input-area { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: var(--card); align-items: center; flex-shrink: 0; }
     #ai-input { flex: 1; padding: 12px 16px; border-radius: 25px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none; font-size: 0.95rem; transition: border-color 0.2s; }
     #ai-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
     #ai-send-btn { background: var(--primary); border: none; color: white; border-radius: 50%; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: transform 0.2s; }
     #ai-send-btn:hover { transform: scale(1.1); }
+    
     .ai-feedback { display: flex; gap: 10px; margin-top: 8px; justify-content: flex-end; opacity: 0.7; }
     .ai-feedback button { background: none; border: none; cursor: pointer; color: var(--muted-text); transition: 0.2s; padding: 4px; font-size: 1.1rem; }
     .ai-feedback button:hover { transform: scale(1.2); color: var(--text); opacity: 1; }
@@ -95,17 +107,13 @@
         const suggestionsBox = document.getElementById('ai-suggestions');
 
         const commands = [
-            "What's my storage usage?",
-            "Find documents that mention 'invoice'",
-            "Show me my most downloaded files",
-            "Create folder 'Project X'",
-            "Rename file 'draft.txt' to 'final.txt'",
-            "Move 'report.pdf' to 'Archive'",
-            "Delete file 'temp.jpg'",
-            "Share 'presentation.pptx' with user@example.com",
-            "Show me files uploaded today",
-            "Empty my trash",
-            "Help"
+            "Who am I?",
+            "Storage Usage",
+            "Read file",
+            "My Team",
+            "Activity Log",
+            "Search User",
+            "Go to Settings"
         ];
 
         const renderSuggestions = () => {
@@ -145,7 +153,10 @@
             if (type === 'bot' && logId) {
                 const fbDiv = document.createElement('div');
                 fbDiv.className = 'ai-feedback';
-                fbDiv.innerHTML = `<button onclick="rateMsg(this, '${logId}', 'like')"><i class="fa-regular fa-thumbs-up"></i></button><button onclick="rateMsg(this, '${logId}', 'dislike')"><i class="fa-regular fa-thumbs-down"></i></button>`;
+                fbDiv.innerHTML = `
+                    <button onclick="rateMsg(this, '${logId}', 'like')"><i class="fa-regular fa-thumbs-up"></i></button>
+                    <button onclick="rateMsg(this, '${logId}', 'dislike')"><i class="fa-regular fa-thumbs-down"></i></button>
+                `;
                 div.appendChild(fbDiv);
             }
             
@@ -155,19 +166,36 @@
 
         window.rateMsg = (btn, id, type) => {
             const parent = btn.parentElement;
-            parent.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.pointerEvents = 'none'; });
+            const buttons = parent.querySelectorAll('button');
+            buttons.forEach(b => {
+                b.disabled = true;
+                b.style.pointerEvents = 'none';
+            });
+            
             const icon = btn.querySelector('i');
             icon.classList.remove('fa-regular');
             icon.classList.add('fa-solid');
             btn.classList.add(type === 'like' ? 'active-like' : 'active-dislike');
-            fetch(`/api/ai/feedback/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) }).catch(console.error);
+
+            fetch(`/api/ai/feedback/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type })
+            }).catch(console.error);
         };
 
-        const getContext = () => ({
-            title: document.title,
-            route: window.location.pathname,
-            language: navigator.language || 'en',
-        });
+        const getContext = () => {
+            const errorEl = document.querySelector('.alert-danger, .error-message, .toast.error');
+            return {
+                title: document.title,
+                route: window.location.pathname,
+                hasError: !!errorEl,
+                errorMessage: errorEl ? errorEl.innerText : null,
+                isMobile: window.innerWidth <= 768,
+                language: navigator.language || 'en',
+                theme: document.documentElement.getAttribute('data-theme') || 'light'
+            };
+        };
 
         const handleSend = async () => {
             const text = input.value.trim();
@@ -175,6 +203,7 @@
             
             addMsg(text, 'user');
             input.value = '';
+            
             typing.classList.remove('hidden');
             msgs.scrollTop = msgs.scrollHeight;
 
@@ -187,19 +216,28 @@
                 
                 const data = await res.json();
                 typing.classList.add('hidden');
+                
                 addMsg(data.response, 'bot', data.logId);
 
                 if (data.action) {
                     if (data.action.type === 'navigate') {
-                        setTimeout(() => window.location.href = data.action.url, 1500);
-                    } else if (data.action.type === 'copy') {
-                        navigator.clipboard.writeText(data.action.text);
-                        addMsg("I've copied the link to your clipboard!", 'bot');
+                        const redirMsg = document.createElement('div');
+                        redirMsg.className = 'ai-msg bot';
+                        redirMsg.innerHTML = '<i class="fa-solid fa-circle-arrow-right"></i> Redirecting...';
+                        msgs.appendChild(redirMsg);
+                        setTimeout(() => window.location.href = data.action.url, 1000);
+                    } else if (data.action.type === 'fill_form') {
+                        document.querySelectorAll(data.action.target).forEach(el => {
+                            el.value = data.action.value;
+                            el.style.transition = 'background 0.5s';
+                            el.style.backgroundColor = '#dcfce7';
+                            setTimeout(() => el.style.backgroundColor = '', 1500);
+                        });
                     }
                 }
             } catch (e) {
                 typing.classList.add('hidden');
-                addMsg("I'm having trouble connecting right now. Please try again later.", 'bot');
+                addMsg("I'm having trouble connecting right now.", 'bot');
             }
         };
 
