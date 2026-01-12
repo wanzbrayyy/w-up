@@ -101,16 +101,10 @@ router.post('/folder', auth.protectApi, async (req, res) => {
     }
 });
 // --- UPLOAD LOGIC (Diperbaiki: Menggunakan crypto.randomUUID) ---
-// ==========================================
-// ROUTER UPLOAD (PERBAIKAN R2 & ERROR HANDLING)
-// ==========================================
-
 router.post('/upload', async (req, res) => {
     try {
-        // --- 1. AUTHENTICATION CHECK ---
         let user = null;
 
-        // Cek header Authorization atau Cookie
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
                 auth.protectApi(req, res, () => { 
@@ -120,7 +114,6 @@ router.post('/upload', async (req, res) => {
             });
         }
 
-        // Cek Guest / File Request
         if (!user && req.body.fileRequestSlug) {
              const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
              if (reqObj) {
@@ -132,43 +125,24 @@ router.post('/upload', async (req, res) => {
              return res.status(401).json({ message: 'Authentication required.' });
         }
 
-        // --- 2. PREPARE DATA ---
         let { 
             filename, contentType, base64, watermarkText, parentId, description, tags, 
             hidden, expires, limit, password, hint, geo, burn, customAlias, stripMetadata 
         } = req.body;
         
-        // FIX: Handling Base64 yang lebih aman (cegah error split pada raw base64)
-        let buffer;
-        try {
-            if (base64.includes('base64,')) {
-                buffer = Buffer.from(base64.split('base64,')[1], 'base64');
-            } else {
-                buffer = Buffer.from(base64, 'base64');
-            }
-        } catch (e) {
-            return res.status(400).json({ message: 'Invalid Base64 format.' });
+        let buffer = Buffer.from(base64.split(',')[1], 'base64');
+        
+        if (contentType.startsWith('image/') && stripMetadata === 'true') {
+            buffer = await sharp(buffer).withMetadata(false).toBuffer();
+        }
+        
+        if (contentType.startsWith('image/') && watermarkText) {
+            const image = await jimp.read(buffer);
+            const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
+            image.print(font, 10, image.bitmap.height - 40, watermarkText);
+            buffer = await image.getBufferAsync(jimp.MIME_PNG); 
         }
 
-        // --- 3. IMAGE PROCESSING (Safe Mode) ---
-        // Kita wrap try-catch agar jika image corrupt, upload tidak batal total
-        try {
-            if (contentType.startsWith('image/') && stripMetadata === 'true') {
-                buffer = await sharp(buffer).withMetadata(false).toBuffer();
-            }
-            
-            if (contentType.startsWith('image/') && watermarkText) {
-                const image = await jimp.read(buffer);
-                const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
-                image.print(font, 10, image.bitmap.height - 40, watermarkText);
-                buffer = await image.getBufferAsync(jimp.MIME_PNG); 
-            }
-        } catch (imgError) {
-            console.warn("Image processing warning:", imgError.message);
-            // Lanjut upload meskipun processing gagal (menggunakan buffer original)
-        }
-
-        // --- 4. HASHING & DUPLICATE CHECK ---
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
@@ -184,9 +158,7 @@ router.post('/upload', async (req, res) => {
             }
         }
 
-        // --- 5. FILENAME GENERATION ---
         let finalAlias = customAlias || filename;
-        // Bersihkan karakter aneh dari nama file
         finalAlias = finalAlias.replace(/[^a-zA-Z0-9._-]/g, '_');
 
         let counter = 1;
@@ -197,34 +169,16 @@ router.post('/upload', async (req, res) => {
             counter++;
         }
 
-        // FIX: Ganti crypto.randomUUID() (Node 15+) dengan randomBytes (Support Semua Node.js)
-        const uniqueId = crypto.randomBytes(8).toString('hex'); 
-        const r2Key = `${user ? user._id : 'guest'}/${Date.now()}_${uniqueId}_${finalAlias}`;
+        const r2Key = `${user ? user._id : 'guest'}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
         
-        // --- 6. UPLOAD TO R2 STORAGE ---
-        // Pastikan config R2 ada
-        if (!process.env.R2_BUCKET_NAME) {
-            throw new Error("Server Misconfiguration: R2_BUCKET_NAME is missing in .env");
-        }
+        const { r2, PutObjectCommand } = require('../utils/r2');
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: r2Key,
+            Body: buffer,
+            ContentType: contentType
+        }));
 
-        try {
-            // Mengambil r2 instance yang sudah di-init di utils/r2.js (sesuai import di atas file api.js)
-            // Jika belum di import di atas, uncomment baris ini:
-            // const { r2, PutObjectCommand } = require('../utils/r2');
-            
-            await r2.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
-                Key: r2Key,
-                Body: buffer,
-                ContentType: contentType
-            }));
-        } catch (r2Error) {
-            console.error("R2 Upload Error:", r2Error);
-            // Throw error agar masuk ke catch block paling bawah dan dikirim ke bot
-            throw new Error(`Cloudflare R2 Error: ${r2Error.message}`);
-        }
-
-        // --- 7. SAVE TO DATABASE ---
         const newFile = new File({
             originalName: filename, 
             customAlias: finalAlias, 
@@ -250,37 +204,25 @@ router.post('/upload', async (req, res) => {
 
         await newFile.save();
 
-        // Webhook Notification
         if (user) {
-            try {
-                triggerWebhook(user, 'file.uploaded', {
-                    fileId: newFile._id,
-                    filename: newFile.originalName,
-                    alias: newFile.customAlias,
-                    size: newFile.size,
-                    contentType: newFile.contentType,
-                    url: `${req.protocol}://${req.get('host')}/w-upload/file/${newFile.customAlias}`,
-                    uploadedAt: newFile.createdAt
-                });
-            } catch(e) { /* Ignore webhook error */ }
+            triggerWebhook(user, 'file.uploaded', {
+                fileId: newFile._id,
+                filename: newFile.originalName,
+                alias: newFile.customAlias,
+                size: newFile.size,
+                contentType: newFile.contentType,
+                url: `${req.protocol}://${req.get('host')}/w-upload/file/${newFile.customAlias}`,
+                uploadedAt: newFile.createdAt
+            });
         }
 
-        // --- 8. SUCCESS RESPONSE ---
-        res.status(201).json({ 
-            status: 'success', 
-            url: `${req.protocol}://${req.get('host')}/w-upload/file/${finalAlias}`, 
-            filename: finalAlias 
-        });
-
+        res.status(201).json({ status: 'success', url: `${req.protocol}://${req.get('host')}/w-upload/file/${finalAlias}`, filename: finalAlias });
     } catch (error) {
-        console.error("Upload Route Error:", error);
-        // Penting: Kirim error.message agar Bot WA tahu kenapa (misal: "R2 Access Denied")
-        res.status(500).json({ 
-            status: 'error', 
-            message: error.message || 'Internal Server Error during Upload' 
-        });
+        console.error("Upload Error:", error);
+        res.status(500).json({ status: 'error', message: 'Upload failed' });
     }
 });
+
 router.post('/upload/remote', auth.protectApi, async (req, res) => {
     try {
         const { url, parentId } = req.body;
