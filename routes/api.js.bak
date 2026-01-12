@@ -8,6 +8,11 @@ const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const sharp = require('sharp');
+const Tesseract = require('tesseract.js');
+const unzipper = require('unzipper');
+const docxConverter = require('docx-pdf');
+const mammoth = require('mammoth');
 const archiver = require('archiver');
 //const { v4: uuidv4 } = require('uuid');
 const File = require('../models/file');
@@ -120,9 +125,16 @@ router.post('/upload', async (req, res) => {
              return res.status(401).json({ message: 'Authentication required.' });
         }
 
-        let { filename, contentType, base64, watermarkText, parentId, description, tags, hidden, expires, limit, password, hint, geo, burn, customAlias } = req.body;
+        let { 
+            filename, contentType, base64, watermarkText, parentId, description, tags, 
+            hidden, expires, limit, password, hint, geo, burn, customAlias, stripMetadata 
+        } = req.body;
         
         let buffer = Buffer.from(base64.split(',')[1], 'base64');
+        
+        if (contentType.startsWith('image/') && stripMetadata === 'true') {
+            buffer = await sharp(buffer).withMetadata(false).toBuffer();
+        }
         
         if (contentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
@@ -860,4 +872,178 @@ router.post('/auth/passkey/verify-login', async (req, res) => {
     }
 });
 
+router.post('/files/:id/ocr', auth.protectApi, async (req, res) => {
+    try {
+        const file = await File.findById(req.params.id);
+        if (!file || !file.contentType.startsWith('image/')) {
+            return res.status(404).json({ message: 'Image file not found.' });
+        }
+        if (file.storageType !== 'r2' || !file.r2Key) {
+            return res.status(400).json({ message: 'File is not stored in a processable location.' });
+        }
+
+        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
+        const buffer = await new Promise((resolve, reject) => {
+            const chunks = [];
+            Body.on('data', chunk => chunks.push(chunk));
+            Body.on('error', reject);
+            Body.on('end', () => resolve(Buffer.concat(chunks)));
+        });
+
+        const { data: { text } } = await Tesseract.recognize(buffer, 'eng');
+        res.json({ text });
+    } catch (error) {
+        res.status(500).json({ message: 'OCR process failed.', error: error.message });
+    }
+});
+
+// Endpoint untuk konversi file
+router.post('/files/:id/convert', auth.protectApi, async (req, res) => {
+    const { toFormat } = req.body; // e.g., 'pdf', 'jpg'
+    try {
+        const file = await File.findById(req.params.id);
+        if (!file) return res.status(404).json({ message: 'File not found.' });
+        if (file.storageType !== 'r2') return res.status(400).json({ message: 'File not processable.' });
+
+        const tempFilePath = path.join(__dirname, '..', 'temp', file.r2Key.split('/').pop());
+        const outputFilePath = `${tempFilePath}.${toFormat}`;
+        
+        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
+        await require('fs').promises.writeFile(tempFilePath, Body);
+
+        let outputBuffer;
+        let newContentType;
+
+        if (file.contentType.includes('docx') && toFormat === 'pdf') {
+            await new Promise((resolve, reject) => {
+                docxConverter(tempFilePath, outputFilePath, (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+            outputBuffer = await require('fs').promises.readFile(outputFilePath);
+            newContentType = 'application/pdf';
+        } else if (file.contentType.startsWith('image/') && toFormat === 'jpg') {
+            outputBuffer = await sharp(tempFilePath).jpeg().toBuffer();
+            newContentType = 'image/jpeg';
+        } else {
+            return res.status(400).json({ message: 'Conversion not supported.' });
+        }
+
+        const finalAlias = `${path.basename(file.originalName, path.extname(file.originalName))}_converted.${toFormat}`;
+        const r2Key = `${req.user.id}/${Date.now()}_${finalAlias}`;
+        
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: r2Key,
+            Body: outputBuffer,
+            ContentType: newContentType
+        }));
+
+        const newFile = new File({
+            originalName: finalAlias,
+            customAlias: finalAlias,
+            contentType: newContentType,
+            size: outputBuffer.length,
+            storageType: 'r2',
+            r2Key,
+            owner: req.user.id,
+            parentId: file.parentId
+        });
+        await newFile.save();
+        
+        triggerWebhook(req.user, 'file.converted', { originalFileId: file._id, newFileId: newFile._id, newFileAlias: newFile.customAlias });
+        res.status(201).json({ message: 'File converted successfully.', newFile });
+    } catch (error) {
+        res.status(500).json({ message: 'Conversion failed.', error: error.message });
+    }
+});
+
+// Endpoint untuk mengekstrak arsip
+router.post('/files/:id/extract', auth.protectApi, async (req, res) => {
+    try {
+        const file = await File.findById(req.params.id);
+        if (!file || !file.contentType.includes('zip')) return res.status(400).json({ message: 'File is not a zip archive.' });
+        if (file.storageType !== 'r2') return res.status(400).json({ message: 'File not processable.' });
+
+        const newFolderName = path.basename(file.originalName, path.extname(file.originalName)) + "_extracted";
+        const parentFolder = new File({
+            originalName: newFolderName,
+            customAlias: `${newFolderName}_${Date.now()}`,
+            isFolder: true,
+            contentType: 'application/vnd.google-apps.folder',
+            owner: req.user.id,
+            parentId: file.parentId,
+            size: 0
+        });
+        await parentFolder.save();
+
+        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
+        
+        const extractedFiles = [];
+        const stream = Body.pipe(unzipper.Parse({ forceStream: true }));
+        for await (const entry of stream) {
+            const buffer = await entry.buffer();
+            const finalAlias = `${Date.now()}_${entry.path}`;
+            const r2Key = `${req.user.id}/${finalAlias}`;
+            
+            await r2.send(new PutObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME, Key: r2Key, Body: buffer, ContentType: 'application/octet-stream'
+            }));
+
+            const newFile = new File({
+                originalName: entry.path,
+                customAlias: finalAlias,
+                contentType: 'application/octet-stream',
+                size: buffer.length,
+                storageType: 'r2',
+                r2Key,
+                owner: req.user.id,
+                parentId: parentFolder._id
+            });
+            await newFile.save();
+            extractedFiles.push(newFile);
+        }
+
+        res.status(201).json({ message: 'Archive extracted successfully.', folder: parentFolder, files: extractedFiles });
+    } catch (error) {
+        res.status(500).json({ message: 'Extraction failed.', error: error.message });
+    }
+});
+
+// Endpoint untuk menyimpan file yang diedit dari frontend
+router.post('/files/:id/save-version', auth.protectApi, async (req, res) => {
+    try {
+        const { base64 } = req.body;
+        const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+        if (!file) return res.status(404).json({ message: 'File not found.' });
+
+        const buffer = Buffer.from(base64.split(',')[1], 'base64');
+        const newR2Key = `${req.user.id}/${Date.now()}_v${file.versions.length + 2}_${file.originalName}`;
+        
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: newR2Key,
+            Body: buffer,
+            ContentType: file.contentType
+        }));
+
+        file.versions.push({
+            version: file.versions.length + 1,
+            r2Key: file.r2Key,
+            size: file.size,
+            uploadedAt: file.updatedAt
+        });
+
+        file.r2Key = newR2Key;
+        file.size = buffer.length;
+        file.updatedAt = new Date();
+        await file.save();
+
+        triggerWebhook(req.user, 'file.updated', { fileId: file._id, alias: file.customAlias, newVersion: file.versions.length + 1 });
+        res.json({ message: 'New version saved successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to save new version.', error: error.message });
+    }
+});
 module.exports = router;
