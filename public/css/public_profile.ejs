@@ -1,4 +1,5 @@
-<%- include('partials/header', { title: (targetUser.branding && targetUser.branding.pageTitle) ? targetUser.branding.pageTitle : targetUser.username, pageCss: 'dashboard' }) %>
+<%- include('partials/header', { title: targetUser.branding.pageTitle || targetUser.username }) %>
+
 <style>
     :root {
         --branded-primary: <%= targetUser.branding.primaryColor || '#4F46E5' %>;
@@ -51,34 +52,20 @@
     </div>
     <div id="uploadList" style="max-width: 800px; margin: 1rem auto; display: flex; flex-direction: column; gap: 0.75rem;"></div>
 
-    <h2 style="margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 2rem; text-align: center;">File Publik</h2>
-    
+    <h2 style="margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 2rem;">File Publik</h2>
     <div class="file-grid">
-        <% if (files.length === 0) { %>
-            <div class="empty-state">
-                <p>Pengguna ini belum membagikan file publik apa pun.</p>
-            </div>
-        <% } %>
-
-        <% files.forEach(file => { 
-            const ext = file.originalName.split('.').pop().toLowerCase();
-        %>
+        <% files.forEach(file => { %>
             <div class="file-card">
                 <div class="file-preview">
-                    <% if (file.contentType.startsWith('image/')) { %><i class="fa-solid fa-image image-icon"></i>
-                    <% } else if (file.contentType.startsWith('video/')) { %><i class="fa-solid fa-video video-icon"></i>
-                    <% } else if (ext === 'pdf') { %><i class="fa-solid fa-file-pdf file-icon"></i>
-                    <% } else if (ext === 'zip' || ext === 'rar') { %><i class="fa-solid fa-file-zipper file-icon"></i>
-                    <% } else { %><i class="fa-solid fa-file file-icon"></i><% } %>
+                    <% if (file.contentType.startsWith('image/')) { %>
+                        <i class="fa-solid fa-image"></i>
+                    <% } else { %>
+                        <i class="fa-solid fa-file"></i>
+                    <% } %>
                 </div>
-                
                 <div class="file-details">
-                    <a href="/w-upload/file/<%= file.customAlias %>" class="filename">
-                        <%= file.originalName %>
-                    </a>
-                    <div class="meta">
-                        <%= (file.size / 1024 / 1024).toFixed(2) %> MB
-                    </div>
+                    <a href="/w-upload/file/<%= file.customAlias %>" class="filename"><%= file.originalName %></a>
+                    <div class="meta"><%= (file.size / 1024 / 1024).toFixed(2) %> MB</div>
                 </div>
             </div>
         <% }) %>
@@ -104,8 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createUploadItem(file) {
         const item = document.createElement('div');
-        item.style = 'display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; text-align: left;';
-        item.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><div style="flex:1;min-width:0;"><div style="font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${file.name}</div><div class="status" style="font-size:0.8rem;color:var(--muted-text);">Uploading...</div></div>`;
+        item.style = 'display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;';
+        item.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><div style="flex:1;min-width:0;"><div style="font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${file.name}</div><div class="status" style="font-size:0.8rem;">Uploading...</div></div>`;
         uploadList.prepend(item);
         return item;
     }
@@ -134,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: file.name,
-                        contentType: file.type || 'application/octet-stream',
+                        contentType: file.type,
                         base64: reader.result,
                         publicProfileUsername: publicUsername
                     })

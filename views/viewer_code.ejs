@@ -1,17 +1,108 @@
-<%- include('partials/header', { title: 'Code Viewer' }) %>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/themes/prism-okaidia.min.css">
-<style>pre[class*="language-"] { margin: 0; }</style>
+<%- include('partials/header', { title: file.originalName, pageCss: 'viewer' }) %>
 
-<pre><code class="language-<%= ext %>" id="code-content">Loading...</code></pre>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-okaidia.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/toolbar/prism-toolbar.min.css">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<style>
+    body {
+        background: var(--bg);
+    }
+    .viewer-container {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 1.5rem;
+    }
+    .viewer-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .viewer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+    .viewer-header h1 {
+        font-size: 1.25rem;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--text);
+        word-break: break-all;
+    }
+    .viewer-actions {
+        display: flex;
+        gap: 0.75rem;
+    }
+    .code-content-wrapper {
+        max-height: 80vh;
+        overflow: auto;
+    }
+    pre[class*="language-"].line-numbers {
+        padding-left: 3.8em;
+        position: relative;
+    }
+    pre[class*="language-"] {
+        margin: 0;
+        border-radius: 0;
+        background: #272822 !important; 
+    }
+    div.code-toolbar > .toolbar {
+        opacity: 1;
+        background: #272822;
+        border-top: 1px solid var(--border);
+    }
+    .toolbar-item > a, .toolbar-item > button, .toolbar-item > span {
+        background: var(--primary);
+        color: white;
+        border-radius: 6px;
+        padding: 5px 10px;
+        font-size: 0.8rem;
+    }
+</style>
+
+<main class="viewer-container">
+    <div class="viewer-card">
+        <div class="viewer-header">
+            <h1><i class="fa-solid fa-file-code"></i> <%= file.originalName %></h1>
+            <div class="viewer-actions">
+                <a href="<%= rawLink %>" download class="btn secondary-btn" style="padding: 0.5rem 1rem;">
+                    <i class="fa-solid fa-download"></i> Download
+                </a>
+            </div>
+        </div>
+        <div class="code-content-wrapper">
+            <pre class="line-numbers"><code class="language-<%= ext %>" id="code-content">Loading content...</code></pre>
+        </div>
+    </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/toolbar/prism-toolbar.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/copy-to-clipboard/prism-copy-to-clipboard.min.js"></script>
+
 <script>
-    fetch('<%= rawLink %>')
-        .then(res => res.text())
-        .then(text => {
-            document.getElementById('code-content').textContent = text;
-            Prism.highlightAll();
-        });
+    document.addEventListener('DOMContentLoaded', () => {
+        const codeContent = document.getElementById('code-content');
+        fetch('<%= rawLink %>')
+            .then(res => res.text())
+            .then(text => {
+                codeContent.textContent = text;
+                Prism.highlightAll();
+            })
+            .catch(err => {
+                codeContent.textContent = 'Error: Could not load file content.';
+            });
+    });
 </script>
+
 <%- include('partials/footer') %>

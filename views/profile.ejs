@@ -48,6 +48,33 @@
 
                 <section class="settings-card">
                     <div class="card-header">
+                        <h3><i class="fa-solid fa-palette"></i> Page Branding (Pro)</h3>
+                    </div>
+                    <div class="card-body">
+                        <% if (user.plan === 'pro') { %>
+                            <div class="form-group">
+                                <label>Logo URL</label>
+                                <input type="url" id="brandingLogoUrl" class="full-input" placeholder="https://..." value="<%= user.branding && user.branding.logoUrl ? user.branding.logoUrl : '' %>">
+                            </div>
+                            <div class="form-group">
+                                <label>Primary Color</label>
+                                <input type="color" id="brandingColor" class="full-input" value="<%= user.branding && user.branding.primaryColor ? user.branding.primaryColor : '#4F46E5' %>" style="padding: 5px; height: 40px;">
+                            </div>
+                            <div class="form-group">
+                                <label>Page Title</label>
+                                <input type="text" id="brandingPageTitle" class="full-input" placeholder="My Awesome Files" value="<%= user.branding && user.branding.pageTitle ? user.branding.pageTitle : '' %>">
+                            </div>
+                            <div class="form-actions">
+                                <button id="saveBrandingBtn" class="btn primary-btn">Save Branding</button>
+                            </div>
+                        <% } else { %>
+                            <p class="text-muted" style="text-align: center;">Upgrade to PRO to unlock custom branding for your public pages.</p>
+                        <% } %>
+                    </div>
+                </section>
+
+                <section class="settings-card">
+                    <div class="card-header">
                         <h3><i class="fa-solid fa-key"></i> API Keys</h3>
                     </div>
                     <div class="card-body">
@@ -273,14 +300,12 @@
     .secondary-btn-sm { background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
     .security-item { display: flex; justify-content: space-between; align-items: center; }
     .security-info p { margin: 0.25rem 0 0 0; color: var(--muted-text); font-size: 0.9rem; }
-    
     .items-list { margin-top: 1rem; }
     .list-item { display:flex; justify-content:space-between; align-items:center; background:var(--bg-secondary); padding:0.75rem; border-radius:8px; margin-bottom:0.5rem; border:1px solid var(--border); }
     .item-info { flex: 1; overflow: hidden; }
     .item-title { font-weight: 600; font-size: 0.9rem; }
     .item-meta code { font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); padding: 2px 5px; border-radius: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90%; margin-top: 4px; }
     .item-actions { display: flex; gap: 0.5rem; }
-    
     @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } }
 </style>
 
@@ -310,35 +335,28 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const textToCopy = targetElement.innerText;
-
         if (!textToCopy) {
             showToast('Nothing to copy.', 'warning');
             return;
         }
-
         try {
             await navigator.clipboard.writeText(textToCopy);
             showToast('Copied to clipboard!', 'success');
         } catch (err) {
-            console.warn('Clipboard API writeText failed, attempting fallback:', err);
-            
             const tempInput = document.createElement('textarea');
             tempInput.value = textToCopy;
             tempInput.style.position = 'absolute';
             tempInput.style.left = '-9999px';
             document.body.appendChild(tempInput);
             tempInput.select();
-
             try {
                 const success = document.execCommand('copy');
                 if (success) {
                     showToast('Copied to clipboard (fallback)!', 'success');
                 } else {
-                    showToast('Failed to copy (fallback failed). Please copy manually.', 'error');
-                    console.error('Fallback copy command returned false.');
+                    showToast('Failed to copy. Please copy manually.', 'error');
                 }
             } catch (execErr) {
-                console.error('Fallback copy failed:', execErr);
                 showToast('Failed to copy. Please copy manually.', 'error');
             } finally {
                 document.body.removeChild(tempInput);
@@ -362,6 +380,27 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch(e) {
                 showToast('Network error', 'error');
             }
+        });
+    }
+
+    const saveBrandingBtn = document.getElementById('saveBrandingBtn');
+    if(saveBrandingBtn) {
+        saveBrandingBtn.addEventListener('click', async () => {
+            const logoUrl = document.getElementById('brandingLogoUrl').value;
+            const primaryColor = document.getElementById('brandingColor').value;
+            const pageTitle = document.getElementById('brandingPageTitle').value;
+            try {
+                const res = await fetch('/api/profile/branding', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ logoUrl, primaryColor, pageTitle })
+                });
+                if(res.ok) showToast('Branding settings updated', 'success');
+                else {
+                    const data = await res.json();
+                    showToast(data.message || 'Failed to update branding', 'error');
+                }
+            } catch(e) { showToast('Network error', 'error'); }
         });
     }
 

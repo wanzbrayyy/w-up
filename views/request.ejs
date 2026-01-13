@@ -1,0 +1,356 @@
+<%- include('partials/header', { title: 'Submit a Request', pageCss: 'auth' }) %>
+
+<main class="request-page-container">
+    <div class="request-card">
+        <div class="request-header">
+            <div class="header-icon-wrapper">
+                <i class="fa-solid fa-rocket"></i>
+            </div>
+            <h1 class="request-title">Make a Request</h1>
+            <p class="request-subtitle">Have a project idea or need a specific feature? Fill out the form below and let's make it happen.</p>
+        </div>
+
+        <% if (query.status === 'success') { %>
+            <div class="alert-box success">
+                <i class="fa-solid fa-check-circle"></i>
+                <span>Your request has been submitted successfully! We will contact you at your provided email.</span>
+            </div>
+        <% } %>
+        <% if (query.status === 'error') { %>
+            <div class="alert-box danger">
+                <i class="fa-solid fa-exclamation-triangle"></i>
+                <span>Error: <%= query.message || 'Please check your input and try again.' %></span>
+            </div>
+        <% } %>
+
+        <form action="/request" method="POST" id="requestForm" class="request-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            
+            <div class="form-grid">
+                <div class="form-group form-group-full">
+                    <label for="contactEmail">
+                        <i class="fa-solid fa-envelope form-icon"></i>
+                        Your Contact Email
+                    </label>
+                    <input type="email" id="contactEmail" name="contactEmail" class="form-input" placeholder="you@example.com" required>
+                </div>
+
+                <div class="form-group form-group-full">
+                    <label for="requestType">
+                        <i class="fa-solid fa-lightbulb form-icon"></i>
+                        What would you like to request?
+                    </label>
+                    <div class="select-wrapper">
+                        <select id="requestType" name="requestType" class="form-input" required>
+                            <option value="" disabled selected>-- Please choose an option --</option>
+                            <option value="scraper">Custom Web Scraper</option>
+                            <option value="website">Build a New Website</option>
+                            <option value="bot">Custom Bot Feature</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="scraper-fields" class="conditional-fields">
+                <div class="form-group">
+                    <label for="url">
+                        <i class="fa-solid fa-link form-icon"></i>
+                        Website URL to Scrape
+                    </label>
+                    <input type="url" id="url" name="url" class="form-input" placeholder="https://example.com/data-page">
+                    <small class="form-hint">Provide the exact URL where the data is located.</small>
+                </div>
+            </div>
+
+            <div id="website-fields" class="conditional-fields">
+                <div class="form-group">
+                    <label for="website-description">
+                        <i class="fa-solid fa-align-left form-icon"></i>
+                        Website Description
+                    </label>
+                    <textarea id="website-description" name="description" class="form-input" rows="8" minlength="300" placeholder="Describe your website idea in detail. What are its core features? Who is the target audience? What is the primary goal? The more detail, the better..."></textarea>
+                    <div class="textarea-footer">
+                        <small class="form-hint">Minimum 300 characters required.</small>
+                        <small class="char-counter" data-for="website-description">0 / 300</small>
+                    </div>
+                </div>
+            </div>
+
+            <div id="bot-fields" class="conditional-fields">
+                <div class="form-group">
+                    <label for="botType">
+                        <i class="fa-solid fa-robot form-icon"></i>
+                        Bot Platform
+                    </label>
+                    <div class="select-wrapper">
+                        <select id="botType" name="botType" class="form-input">
+                            <option value="" disabled selected>-- Select a platform --</option>
+                            <option value="Discord">Discord</option>
+                            <option value="Telegram">Telegram</option>
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="Other">Other (Specify in description)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="bot-description">
+                        <i class="fa-solid fa-align-left form-icon"></i>
+                        Bot Feature Description
+                    </label>
+                    <textarea id="bot-description" name="description" class="form-input" rows="8" minlength="300" placeholder="Describe the bot's functionality. What commands should it have? How should it interact with users? What problem does it solve?"></textarea>
+                    <div class="textarea-footer">
+                        <small class="form-hint">Minimum 300 characters required.</small>
+                        <small class="char-counter" data-for="bot-description">0 / 300</small>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit">
+                <i class="fa-solid fa-paper-plane"></i>
+                Submit Request
+            </button>
+        </form>
+    </div>
+</main>
+
+<style>
+    .request-page-container {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 3rem 1.5rem;
+        background-color: var(--bg);
+        min-height: calc(100vh - 73px);
+    }
+    .request-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.07);
+        width: 100%;
+        max-width: 800px;
+        padding: 2.5rem 3rem;
+    }
+    .request-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .header-icon-wrapper {
+        width: 70px;
+        height: 70px;
+        background: rgba(var(--primary-rgb), 0.1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        color: var(--primary);
+        font-size: 2rem;
+    }
+    .request-title {
+        font-size: 2rem;
+        font-weight: 800;
+        margin: 0 0 0.5rem 0;
+        color: var(--text);
+    }
+    .request-subtitle {
+        font-size: 1rem;
+        color: var(--muted-text);
+        margin: 0;
+    }
+    .request-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+    .form-group label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text);
+    }
+    .form-icon {
+        color: var(--muted-text);
+    }
+    .form-input {
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+    }
+    .form-input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.2);
+    }
+    textarea.form-input {
+        resize: vertical;
+        min-height: 120px;
+    }
+    .select-wrapper {
+        position: relative;
+    }
+    .select-wrapper::after {
+        content: '\f078';
+        font-family: 'Font Awesome 6 Free';
+        font-weight: 900;
+        position: absolute;
+        right: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        color: var(--muted-text);
+    }
+    .form-hint {
+        font-size: 0.8rem;
+        color: var(--muted-text);
+        margin-top: 0.5rem;
+    }
+    .textarea-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .char-counter {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--muted-text);
+        margin-top: 0.5rem;
+    }
+    .conditional-fields {
+        display: none;
+        animation: slideDown 0.4s ease-out;
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .btn-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 0.9rem 1.5rem;
+        border-radius: 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 1rem;
+    }
+    .btn-submit:hover {
+        background: var(--primary-hover);
+        transform: translateY(-2px);
+    }
+    .alert-box {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-weight: 500;
+        border: 1px solid transparent;
+    }
+    .alert-box.success {
+        background-color: #f0fdf4;
+        color: #15803d;
+        border-color: #bbf7d0;
+    }
+    .alert-box.danger {
+        background-color: #fef2f2;
+        color: #b91c1c;
+        border-color: #fecaca;
+    }
+    :root { --primary-rgb: 37, 99, 235; }
+    [data-theme="dark"] { --primary-rgb: 59, 130, 246; }
+
+    @media (min-width: 640px) {
+        .form-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+        .form-group-full {
+            grid-column: 1 / -1;
+        }
+    }
+    @media (max-width: 768px) {
+        .request-card {
+            padding: 2rem 1.5rem;
+        }
+        .request-title {
+            font-size: 1.75rem;
+        }
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const requestTypeSelect = document.getElementById('requestType');
+        const allConditionalFields = document.querySelectorAll('.conditional-fields');
+        const allTextareas = document.querySelectorAll('textarea[minlength]');
+
+        function toggleFields() {
+            const selectedValue = requestTypeSelect.value;
+            
+            allConditionalFields.forEach(field => {
+                field.style.display = 'none';
+                field.querySelectorAll('input, textarea, select').forEach(input => {
+                    input.disabled = true;
+                    input.required = false;
+                });
+            });
+
+            if (selectedValue) {
+                const targetFields = document.getElementById(`${selectedValue}-fields`);
+                if (targetFields) {
+                    targetFields.style.display = 'block';
+                    targetFields.querySelectorAll('input, textarea, select').forEach(input => {
+                        input.disabled = false;
+                        if (input.hasAttribute('minlength') || input.id === 'url' || input.id === 'botType') {
+                            input.required = true;
+                        }
+                    });
+                }
+            }
+        }
+
+        requestTypeSelect.addEventListener('change', toggleFields);
+        
+        allTextareas.forEach(textarea => {
+            const minLength = parseInt(textarea.getAttribute('minlength'), 10);
+            const counter = document.querySelector(`.char-counter[data-for="${textarea.id}"]`);
+            if (counter) {
+                textarea.addEventListener('input', () => {
+                    const count = textarea.value.length;
+                    counter.textContent = `${count} / ${minLength}`;
+                    counter.style.color = count >= minLength ? 'var(--success)' : 'var(--muted-text)';
+                });
+            }
+        });
+
+        toggleFields();
+    });
+</script>
+
+<%- include('partials/footer') %>

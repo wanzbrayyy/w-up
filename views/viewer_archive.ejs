@@ -1,27 +1,161 @@
-<%- include('partials/header', { title: 'Archive Viewer' }) %>
-<div style="text-align:center; padding: 50px;">
-    <h2><%= file.originalName %></h2>
-    <p>This is a compressed archive.</p>
-    <button id="extractBtn">Extract Files</button>
-    <a href="<%= downloadLink %>">Download Archive</a>
-    <div id="status"></div>
-</div>
+<%- include('partials/header', { title: file.originalName, pageCss: 'viewer' }) %>
+
+<style>
+    body {
+        background: var(--bg);
+    }
+    .viewer-container {
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1.5rem;
+    }
+    .archive-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        text-align: center;
+        padding: 3rem 2rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .archive-icon {
+        font-size: 4rem;
+        color: var(--primary);
+        margin-bottom: 1.5rem;
+    }
+    .archive-card h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem 0;
+        color: var(--text);
+    }
+    .archive-card p {
+        color: var(--muted-text);
+        font-size: 1.1rem;
+        margin: 0 0 2.5rem 0;
+    }
+    .archive-actions {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+    }
+    #status {
+        margin-top: 1.5rem;
+        font-weight: 500;
+        color: var(--muted-text);
+    }
+    #status.success { color: var(--success); }
+    #status.error { color: var(--danger); }
+    
+    #extracted-files-container {
+        margin-top: 2rem;
+        text-align: left;
+        border-top: 1px solid var(--border);
+        padding-top: 1.5rem;
+    }
+    #extracted-files-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    #extracted-files-list li {
+        background: var(--bg-secondary);
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+    }
+    #extracted-files-list a {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+    }
+</style>
+
+<main class="viewer-container">
+    <div class="archive-card">
+        <div class="archive-icon">
+            <i class="fa-solid fa-file-zipper"></i>
+        </div>
+        <h1><%= file.originalName %></h1>
+        <p>This is a compressed archive file.</p>
+        
+        <div class="archive-actions">
+            <button id="extractBtn" class="btn primary-btn" style="padding: 0.75rem 2rem;">
+                <i class="fa-solid fa-box-open"></i> Extract Files
+            </button>
+            <a href="<%= downloadLink %>" class="btn secondary-btn" style="padding: 0.75rem 2rem;">
+                <i class="fa-solid fa-download"></i> Download Archive
+            </a>
+        </div>
+
+        <div id="status"></div>
+        <div id="extracted-files-container" style="display:none;">
+            <h3>Extracted Files:</h3>
+            <ul id="extracted-files-list"></ul>
+        </div>
+    </div>
+</main>
 
 <script>
-document.getElementById('extractBtn').addEventListener('click', async () => {
-    document.getElementById('status').innerText = 'Extracting...';
-    try {
-        const res = await fetch('/api/files/<%= file._id %>/extract', { method: 'POST' });
-        const data = await res.json();
-        if(res.ok) {
-            document.getElementById('status').innerText = `Extracted to folder: ${data.folder.originalName}`;
-            window.location.href = `/dashboard?folderId=${data.folder._id}`;
-        } else {
-            document.getElementById('status').innerText = `Error: ${data.message}`;
+document.addEventListener('DOMContentLoaded', () => {
+    const extractBtn = document.getElementById('extractBtn');
+    const statusDiv = document.getElementById('status');
+    const filesContainer = document.getElementById('extracted-files-container');
+    const filesList = document.getElementById('extracted-files-list');
+
+    extractBtn.addEventListener('click', async () => {
+        statusDiv.textContent = 'Extracting, please wait...';
+        statusDiv.className = '';
+        filesContainer.style.display = 'none';
+        extractBtn.disabled = true;
+        extractBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Extracting...';
+
+        try {
+            const res = await fetch('/api/files/<%= file._id %>/extract', {
+                method: 'POST'
+            });
+            
+            const data = await res.json();
+
+            if (res.ok) {
+                // Kasus jika pengguna LOGIN
+                if (data.folder) {
+                    statusDiv.textContent = `Success! Extracted to folder: ${data.folder.originalName}. Redirecting...`;
+                    statusDiv.className = 'success';
+                    showToast('Archive extracted!', 'success');
+                    setTimeout(() => {
+                        window.location.href = `/dashboard?folderId=${data.folder._id}`;
+                    }, 2000);
+                } 
+                // Kasus jika pengguna TAMU
+                else if (data.files) {
+                    statusDiv.textContent = 'Extraction successful! Here are your files:';
+                    statusDiv.className = 'success';
+                    filesList.innerHTML = '';
+                    data.files.forEach(file => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<a href="${file.url}" target="_blank">${file.name}</a>`;
+                        filesList.appendChild(li);
+                    });
+                    filesContainer.style.display = 'block';
+                    extractBtn.style.display = 'none'; // Sembunyikan tombol setelah berhasil
+                }
+            } else {
+                statusDiv.textContent = `Error: ${data.message}`;
+                statusDiv.className = 'error';
+                extractBtn.disabled = false;
+                extractBtn.innerHTML = '<i class="fa-solid fa-box-open"></i> Extract Files';
+            }
+        } catch (e) {
+            statusDiv.textContent = 'A server error occurred. Please try again.';
+            statusDiv.className = 'error';
+            extractBtn.disabled = false;
+            extractBtn.innerHTML = '<i class="fa-solid fa-box-open"></i> Extract Files';
         }
-    } catch(e) {
-        document.getElementById('status').innerText = 'A server error occurred.';
-    }
+    });
 });
 </script>
+
 <%- include('partials/footer') %>

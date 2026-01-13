@@ -17,7 +17,7 @@ const viewRoutes = require('./routes/view');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const aiRoutes = require('./routes/ai'); 
-
+const reqRoutes = require('./routes/req'); 
 app.set('trust proxy', 1);
 
 app.use(helmet({
@@ -93,6 +93,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
+  res.locals.currentUrl = req.originalUrl;
   if (req.csrfToken) {
     res.locals.csrfToken = req.csrfToken();
   }
@@ -115,6 +116,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api', apiRoutes);
 app.use('/admin', adminRoutes);
+app.use('/request', reqRoutes);
 app.use('/', viewRoutes);
 
 app.use((err, req, res, next) => {

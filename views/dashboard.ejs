@@ -10,7 +10,7 @@
         </div>
 
         <div class="sidebar-menu">
-            <a href="/dashboard" class="menu-item <%= !query.filter && !query.type ? 'active' : '' %>">
+            <a href="/dashboard" class="menu-item <%= !query.filter && !query.type && !query.folderId ? 'active' : '' %>">
                 <i class="fa-solid fa-hard-drive"></i> My Files
             </a>
             <a href="/dashboard?filter=shared" class="menu-item <%= query.filter === 'shared' ? 'active' : '' %>">
@@ -19,7 +19,7 @@
             <a href="/dashboard?filter=starred" class="menu-item <%= query.filter === 'starred' ? 'active' : '' %>">
                 <i class="fa-solid fa-star"></i> Starred
             </a>
-            <a href="/dashboard/teams" class="menu-item">
+            <a href="/dashboard/teams" class="menu-item <%= locals.currentUrl && currentUrl.includes('/dashboard/teams') ? 'active' : '' %>">
                 <i class="fa-solid fa-people-group"></i> Teams
             </a>
             <a href="/dashboard?filter=trash" class="menu-item <%= query.filter === 'trash' ? 'active' : '' %>">
@@ -73,8 +73,9 @@
             
             <div class="search-bar-wrapper">
                 <form method="GET" action="/dashboard">
+                    <% if (query.folderId) { %><input type="hidden" name="folderId" value="<%= query.folderId %>"><% } %>
                     <i class="fa-solid fa-search"></i>
-                    <input type="text" name="q" placeholder="Search..." value="<%= query.q || '' %>">
+                    <input type="text" name="q" placeholder="Search files..." value="<%= query.q || '' %>">
                 </form>
             </div>
 
@@ -82,7 +83,7 @@
                 <% if (query.filter === 'trash') { %>
                     <button class="danger-btn" id="emptyTrashBtn">Empty Trash</button>
                 <% } else { %>
-                    <a href="/dashboard?sortBy=createdAt&sortOrder=<%= query.sortOrder === 'asc' ? 'desc' : 'asc' %>" class="icon-btn" title="Sort Date">
+                    <a href="/dashboard?sortBy=createdAt&sortOrder=<%= query.sortOrder === 'asc' ? 'desc' : 'asc' %>" class="icon-btn" title="Sort by Date">
                         <i class="fa-solid fa-arrow-down-wide-short"></i>
                     </a>
                 <% } %>
@@ -171,19 +172,22 @@
         <li id="cmOpen"><i class="fa-solid fa-up-right-from-square"></i> Open / Edit</li>
         <li id="cmShare"><i class="fa-solid fa-share-nodes"></i> Share</li>
         <li id="cmCopyLink"><i class="fa-solid fa-link"></i> Copy Link</li>
-        <li class="separator" id="cmToolsSeparator" style="display:none;"></li>
-        <li id="cmOCR" style="display:none;"><i class="fa-solid fa-wand-magic-sparkles"></i> Extract Text (OCR)</li>
-        <li id="cmConvert" style="display:none;"><i class="fa-solid fa-right-left"></i> Convert</li>
-        <li id="cmExtract" style="display:none;"><i class="fa-solid fa-box-open"></i> Extract Archive</li>
+        <li class="separator" id="cmToolsSeparator"></li>
+        <li id="cmOCR"><i class="fa-solid fa-wand-magic-sparkles"></i> Extract Text (OCR)</li>
+        <li id="cmConvert"><i class="fa-solid fa-right-left"></i> Convert</li>
+        <li id="cmExtract"><i class="fa-solid fa-box-open"></i> Extract Archive</li>
         <li class="separator"></li>
         <li id="cmRename"><i class="fa-solid fa-pen"></i> Rename</li>
+        <li id="cmMove"><i class="fa-solid fa-folder-tree"></i> Move</li>
         <li id="cmStar"><i class="fa-solid fa-star"></i> Star/Unstar</li>
         <li id="cmInfo"><i class="fa-solid fa-circle-info"></i> Details</li>
+        <li class="separator"></li>
+        <li id="cmTransferOwner"><i class="fa-solid fa-user-pen"></i> Transfer Ownership</li>
         <li id="cmDelete" class="danger"><i class="fa-solid fa-trash"></i> Delete</li>
     </ul>
 </div>
 
-<div class="modal" id="shareModal"><div class="modal-box" style="max-width:500px"><h3>Share Settings</h3><div class="tabs"><button class="tab-btn active" data-tab="tab-link">Link</button><button class="tab-btn" data-tab="tab-protect">Protection</button><button class="tab-btn" data-tab="tab-collab">Collaborators</button><button class="tab-btn" data-tab="tab-email">Email</button></div><div class="tab-content active" id="tab-link"><p>Anyone with this link can view the file.</p><input type="text" id="shareLinkInput" class="full-input" readonly><button class="btn secondary-btn" onclick="navigator.clipboard.writeText(document.getElementById('shareLinkInput').value);showToast('Link copied!')">Copy Link</button></div><div class="tab-content" id="tab-protect"><input type="password" id="sharePassword" class="full-input" placeholder="Password (optional)"><input type="text" id="shareHint" class="full-input" placeholder="Password Hint (optional)"><input type="number" id="shareExpires" class="full-input" placeholder="Expire after (hours)"><label><input type="checkbox" id="shareBurn">Burn after read</label></div><div class="tab-content" id="tab-collab"><input type="text" id="shareCollabUser" class="full-input" placeholder="Enter username"><button class="btn confirm-btn" id="addCollabBtn">Add</button></div><div class="tab-content" id="tab-email"><input type="email" id="shareEmail" class="full-input" placeholder="Recipient's email"><button class="btn confirm-btn" id="sendEmailBtn">Send</button></div><div class="modal-footer"><button class="btn cancel-btn">Close</button><button class="btn confirm-btn" id="saveShareSettingsBtn">Save</button></div></div></div>
+<div class="modal" id="shareModal"><div class="modal-box" style="max-width:600px"><h3>Share Settings</h3><div class="tabs"><button class="tab-btn active" data-tab="tab-collab">Collaborators</button><button class="tab-btn" data-tab="tab-links">Share Links</button><button class="tab-btn" data-tab="tab-analytics">Analytics</button></div><div class="tab-content active" id="tab-collab"><div style="display:flex;gap:10px;margin-bottom:1rem;"><input type="text" id="shareCollabUser" class="full-input" placeholder="Username"><select id="collabRole" class="full-input" style="width:120px; flex-shrink: 0;"><option value="viewer">Viewer</option><option value="uploader">Uploader</option><option value="editor">Editor</option></select><button class="btn primary-btn" id="addCollabBtn">Add</button></div><div id="collaboratorsList" class="items-list"></div></div><div class="tab-content" id="tab-links"><button class="btn secondary-btn" id="createShareLinkBtn" style="margin-bottom:1rem;"><i class="fa-solid fa-plus"></i> Create New Link</button><div id="shareLinksList" class="items-list"></div></div><div class="tab-content" id="tab-analytics"><div style="position: relative; height:200px; width:100%;"><canvas id="analyticsChart"></canvas></div><ul id="analyticsList"></ul></div><div class="modal-footer"><button class="btn cancel-btn">Close</button></div></div></div>
 <div class="modal" id="fileRequestModal"><div class="modal-box"><h3>Create File Request</h3><input type="text" id="fileRequestLabel" placeholder="Label (e.g., 'Project Submissions')" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="createFileRequestBtn">Create</button></div></div></div>
 <div class="modal" id="folderModal"><div class="modal-box"><h3>New Folder</h3><input type="text" id="folderNameInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="createFolderBtn">Create</button></div></div></div>
 <div class="modal" id="remoteModal"><div class="modal-box"><h3>Remote Upload</h3><input type="url" id="remoteUrlInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="startRemoteBtn">Fetch</button></div></div></div>
@@ -191,6 +195,18 @@
 <div class="modal" id="metaModal"><div class="modal-box"><h3>Details</h3><textarea id="descInput" placeholder="Description" class="full-input"></textarea><input type="text" id="tagsInput" placeholder="Tags (comma, separated)" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="saveMetaBtn">Save</button></div></div></div>
 <input type="file" id="fileInput" multiple hidden>
 
+<style>
+    .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+    .tab-btn { background: none; border: none; padding: 0.75rem 1rem; cursor: pointer; color: var(--muted-text); border-bottom: 2px solid transparent; font-weight: 600; font-size: 0.9rem; }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    #analyticsList { list-style-type: none; padding: 0; font-size: 0.9rem; color: var(--muted-text); margin-top: 1.5rem; }
+    #analyticsList li { margin-bottom: 0.5rem; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const currentFolderId = new URLSearchParams(window.location.search).get('folderId');
@@ -200,6 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
     const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+    
     function toggleSidebar() { sidebar.classList.toggle('active'); sidebarOverlay.classList.toggle('active'); }
     if(sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
     if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
@@ -217,9 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleUpload(files) {
         showToast(`Uploading ${files.length} files...`, 'info');
-        for (const file of files) {
-            await uploadStandard(file);
-        }
+        for (const file of files) { await uploadStandard(file); }
         setTimeout(() => location.reload(), 1500);
     }
     
@@ -241,37 +256,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const contextMenu = document.getElementById('contextMenu');
     let contextTarget = null;
+    window.contextTarget = null;
 
     document.querySelectorAll('.file-card').forEach(card => {
         card.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             contextTarget = card;
-
-            document.querySelectorAll('#contextMenu li[id]').forEach(item => item.style.display = 'list-item');
-            document.getElementById('cmOCR').style.display = 'none';
-            document.getElementById('cmConvert').style.display = 'none';
-            document.getElementById('cmExtract').style.display = 'none';
-            document.getElementById('cmToolsSeparator').style.display = 'none';
-            
-            if (card.dataset.type === 'file') {
-                let toolsVisible = false;
-                if (card.dataset.contentType.startsWith('image/')) {
-                    document.getElementById('cmOCR').style.display = 'list-item';
-                    document.getElementById('cmConvert').style.display = 'list-item';
-                    toolsVisible = true;
-                }
-                if (card.dataset.ext === 'zip') {
-                    document.getElementById('cmExtract').style.display = 'list-item';
-                    toolsVisible = true;
-                }
-                if(toolsVisible) document.getElementById('cmToolsSeparator').style.display = 'block';
-            } else {
-                document.querySelectorAll('#cmOpen, #cmShare, #cmCopyLink, #cmRename, #cmStar, #cmInfo, #cmDelete').forEach(el => el.style.display = 'list-item');
-                document.querySelectorAll('#cmOCR, #cmConvert, #cmExtract, #cmToolsSeparator').forEach(el => el.style.display = 'none');
+            window.contextTarget = card;
+            document.querySelectorAll('#contextMenu li[id]').forEach(item => item.style.display = 'flex');
+            const isFile = card.dataset.type === 'file';
+            let toolsVisible = false;
+            if (isFile) {
+                if (card.dataset.contentType.startsWith('image/')) { toolsVisible = true; }
+                if (card.dataset.ext === 'zip') { toolsVisible = true; }
             }
-
+            document.getElementById('cmOCR').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
+            document.getElementById('cmConvert').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
+            document.getElementById('cmExtract').style.display = (isFile && card.dataset.ext === 'zip') ? 'flex' : 'none';
+            document.getElementById('cmToolsSeparator').style.display = toolsVisible ? 'block' : 'none';
             document.getElementById('renameInput').value = card.dataset.name;
-            document.getElementById('shareLinkInput').value = `${window.location.origin}/w-upload/file/${card.dataset.alias}`;
             contextMenu.style.top = `${e.clientY}px`;
             contextMenu.style.left = `${e.clientX}px`;
             contextMenu.style.display = 'block';
@@ -281,68 +284,45 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', (e) => {
         if(!e.target.closest('.context-menu')) contextMenu.style.display = 'none';
     });
+    
+    const allModals = document.querySelectorAll('.modal');
+    function closeModal() { allModals.forEach(m => m.classList.remove('active')); }
+    allModals.forEach(modal => {
+        modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+        modal.querySelector('.cancel-btn')?.addEventListener('click', closeModal);
+    });
+
+    const modalTriggers = { 'newFolderBtn': 'folderModal', 'remoteUploadBtn': 'remoteModal', 'fileRequestBtn': 'fileRequestModal', 'cmRename': 'renameModal', 'cmInfo': 'metaModal' };
+    Object.entries(modalTriggers).forEach(([btnId, modalId]) => {
+        const btn = document.getElementById(btnId);
+        if(btn) btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            contextMenu.style.display = 'none';
+            document.getElementById(modalId).classList.add('active');
+        });
+    });
+
+    async function performAction(url, method, body) {
+        try {
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Action completed!', 'success');
+                return true;
+            } else {
+                showToast(data.message || 'An error occurred.', 'error');
+                return false;
+            }
+        } catch (error) {
+            showToast('Network error.', 'error');
+            return false;
+        }
+    }
 
     document.getElementById('cmOpen').addEventListener('click', () => {
         if (!contextTarget) return;
-        const url = contextTarget.dataset.type === 'folder' 
-            ? `/dashboard?folderId=${contextTarget.dataset.id}` 
-            : `/w-upload/file/${contextTarget.dataset.alias}`;
+        const url = contextTarget.dataset.type === 'folder' ? `/dashboard?folderId=${contextTarget.dataset.id}` : `/w-upload/file/${contextTarget.dataset.alias}`;
         window.open(url, '_blank');
-    });
-
-    document.getElementById('cmOCR').addEventListener('click', async () => {
-        if (!contextTarget) return;
-        showToast('Starting OCR...', 'info');
-        try {
-            const res = await fetch(`/api/files/${contextTarget.dataset.id}/ocr`, { method: 'POST' });
-            const data = await res.json();
-            if (res.ok) {
-                const modal = document.createElement('div');
-                modal.className = 'modal active';
-                modal.innerHTML = `<div class="modal-box"><h3 style="margin-bottom:1rem;">Extracted Text</h3><textarea class="full-input" rows="10" readonly>${data.text}</textarea><div class="modal-footer"><button class="btn cancel-btn">Close</button></div></div>`;
-                document.body.appendChild(modal);
-                modal.querySelector('.cancel-btn').onclick = () => document.body.removeChild(modal);
-                modal.onclick = (e) => { if(e.target === modal) document.body.removeChild(modal); };
-            } else {
-                showToast(data.message || 'OCR failed', 'error');
-            }
-        } catch (e) { showToast('Server error during OCR.', 'error'); }
-    });
-    
-    document.getElementById('cmExtract').addEventListener('click', async () => {
-        if (!contextTarget) return;
-        showToast('Extracting archive...', 'info');
-        try {
-            const res = await fetch(`/api/files/${contextTarget.dataset.id}/extract`, { method: 'POST' });
-            if (res.ok) {
-                showToast('Extraction complete!', 'success');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                const data = await res.json();
-                showToast(data.message || 'Extraction failed', 'error');
-            }
-        } catch (e) { showToast('Server error during extraction.', 'error'); }
-    });
-
-    document.getElementById('cmConvert').addEventListener('click', async () => {
-        if (!contextTarget) return;
-        const toFormat = prompt('Convert image to which format? (e.g., jpg, png, webp)', 'jpg');
-        if (!toFormat) return;
-        showToast(`Converting to ${toFormat}...`, 'info');
-        try {
-            const res = await fetch(`/api/files/${contextTarget.dataset.id}/convert`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ toFormat })
-            });
-            if (res.ok) {
-                showToast('Conversion complete!', 'success');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                const data = await res.json();
-                showToast(data.message || 'Conversion failed', 'error');
-            }
-        } catch (e) { showToast('Server error during conversion.', 'error'); }
     });
 
     document.getElementById('cmCopyLink').addEventListener('click', () => {
@@ -353,39 +333,187 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('cmDelete').addEventListener('click', async () => {
         if (!contextTarget || !confirm('Move item to trash?')) return;
-        await fetch(`/api/files/${contextTarget.dataset.id}`, { method: 'DELETE' });
-        location.reload();
-    });
-
-    const modalTriggers = { 'newFolderBtn': 'folderModal', 'remoteUploadBtn': 'remoteModal', 'fileRequestBtn': 'fileRequestModal', 'cmRename': 'renameModal', 'cmInfo': 'metaModal', 'cmShare': 'shareModal' };
-    Object.entries(modalTriggers).forEach(([btnId, modalId]) => {
-        const btn = document.getElementById(btnId);
-        if(btn) btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            contextMenu.style.display = 'none';
-            document.getElementById(modalId).classList.add('active');
-        });
-    });
-
-    document.querySelectorAll('.cancel-btn, .modal').forEach(el => {
-        el.addEventListener('click', (e) => {
-            if(e.target === el) document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
-        });
+        if (await performAction(`/api/files/${contextTarget.dataset.id}`, 'DELETE')) location.reload();
     });
 
     document.getElementById('confirmRenameBtn').addEventListener('click', async () => {
-        await fetch(`/api/files/${contextTarget.dataset.id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ newName: document.getElementById('renameInput').value }) });
-        location.reload();
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/rename`, 'PUT', { newName: document.getElementById('renameInput').value })) location.reload();
     });
 
     document.getElementById('createFolderBtn').addEventListener('click', async () => {
-        await fetch('/api/folder', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: document.getElementById('folderNameInput').value, parentId: currentFolderId }) });
-        location.reload();
+        if (await performAction('/api/folder', 'POST', { name: document.getElementById('folderNameInput').value, parentId: currentFolderId })) location.reload();
     });
 
     document.getElementById('startRemoteBtn').addEventListener('click', async () => {
-        await fetch('/api/upload/remote', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url: document.getElementById('remoteUrlInput').value, parentId: currentFolderId }) });
-        location.reload();
+        if (await performAction('/api/upload/remote', 'POST', { url: document.getElementById('remoteUrlInput').value, parentId: currentFolderId })) location.reload();
+    });
+
+    document.getElementById('saveMetaBtn').addEventListener('click', async () => {
+        const body = { description: document.getElementById('descInput').value, tags: document.getElementById('tagsInput').value };
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/meta`, 'PUT', body)) location.reload();
+    });
+
+    document.getElementById('cmStar').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        if (await performAction(`/api/files/bulk`, 'POST', { fileIds: [contextTarget.dataset.id], action: 'star' })) location.reload();
+    });
+
+    document.getElementById('cmMove').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        const folderId = prompt("Enter the ID of the destination folder (leave empty for root):");
+        if (folderId === null) return;
+        if (await performAction(`/api/files/bulk`, 'POST', { fileIds: [contextTarget.dataset.id], action: 'move', targetFolderId: folderId || null })) location.reload();
+    });
+
+    document.getElementById('createFileRequestBtn').addEventListener('click', async () => {
+        const label = document.getElementById('fileRequestLabel').value;
+        const res = await fetch('/api/file-requests', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ label, folderId: currentFolderId }) });
+        const data = await res.json();
+        if(res.ok) {
+            prompt('Here is your File Request link:', data.link);
+            closeModal();
+        }
+    });
+
+    document.getElementById('cmTransferOwner').addEventListener('click', async () => {
+        const username = prompt("Enter the username of the new owner:");
+        if (!username || !contextTarget) return;
+        if (!confirm(`Transfer ownership to ${username}? This cannot be undone.`)) return;
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/transfer-ownership`, 'POST', { username })) location.reload();
+    });
+
+    document.getElementById('cmShare').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        document.getElementById('shareModal').classList.add('active');
+        await loadShareData();
+    });
+    
+    document.getElementById('addCollabBtn').addEventListener('click', async () => {
+        const username = document.getElementById('shareCollabUser').value;
+        const role = document.getElementById('collabRole').value;
+        if(!username) return;
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/collaborator`, 'POST', { username, role })) {
+            document.getElementById('shareCollabUser').value = '';
+            loadShareData();
+        }
+    });
+
+    document.getElementById('createShareLinkBtn').addEventListener('click', async () => {
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/share-links`, 'POST')) loadShareData();
+    });
+    
+    window.revokeLink = async (linkId) => {
+        if(!confirm('Revoke this link?')) return;
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/share-links/${linkId}`, 'DELETE')) loadShareData();
+    };
+
+    window.removeCollab = async (username) => {
+        if(!confirm(`Remove ${username} from collaborators?`)) return;
+        // API endpoint to remove a collaborator is missing, this is a placeholder.
+        showToast('Remove collaborator API endpoint not implemented yet.', 'warning');
+    };
+    
+    async function loadShareData() {
+        if (!contextTarget) return;
+        const res = await fetch(`/api/files/${contextTarget.dataset.id}/share-details`);
+        if (!res.ok) { showToast('Failed to load share data', 'error'); return; }
+        const data = await res.json();
+        
+        const collabList = document.getElementById('collaboratorsList');
+        collabList.innerHTML = data.collaborators.map(c => `<div class="list-item"><span>${c.user.username} (${c.role})</span><button class="icon-btn danger" onclick="removeCollab('${c.user.username}')"><i class="fa-solid fa-trash"></i></button></div>`).join('');
+
+        const linksList = document.getElementById('shareLinksList');
+        linksList.innerHTML = data.shareLinks.map(l => {
+            const fullLink = `${window.location.origin}/w-upload/file/${contextTarget.dataset.alias}?share_id=${l.linkId}`;
+            return `<div class="list-item"><code>${fullLink}</code><div><button class="icon-btn" onclick="navigator.clipboard.writeText('${fullLink}'); showToast('Copied!')"><i class="fa-solid fa-copy"></i></button><button class="icon-btn danger" onclick="revokeLink('${l.linkId}')"><i class="fa-solid fa-trash"></i></button></div></div>`;
+        }).join('');
+        
+        await loadAnalytics();
+    }
+    
+    let analyticsChartInstance;
+    async function loadAnalytics() {
+        if (!contextTarget) return;
+        const res = await fetch(`/api/files/${contextTarget.dataset.id}/analytics`);
+        const data = await res.json();
+        const ctx = document.getElementById('analyticsChart').getContext('2d');
+        const list = document.getElementById('analyticsList');
+        list.innerHTML = '';
+        
+        const labels = data.map(d => d._id || 'Unknown');
+        const downloads = data.map(d => d.downloads);
+        
+        data.forEach(d => { list.innerHTML += `<li>${d._id || 'Unknown'}: ${d.views} views, ${d.downloads} downloads</li>`; });
+
+        if (analyticsChartInstance) analyticsChartInstance.destroy();
+        analyticsChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: '# of Downloads by Country', data: downloads, backgroundColor: 'rgba(79, 70, 229, 0.5)', borderColor: 'rgba(79, 70, 229, 1)', borderWidth: 1 }] },
+            options: { scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    document.querySelectorAll('.tabs .tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const tabContainer = e.target.closest('.tabs');
+            const modalBox = e.target.closest('.modal-box');
+            tabContainer.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+            modalBox.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            e.target.classList.add('active');
+            modalBox.querySelector(`#${e.target.dataset.tab}`).classList.add('active');
+        });
+    });
+
+    document.getElementById('cmOCR').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        showToast('Starting OCR...', 'info');
+        if(await performAction(`/api/files/${contextTarget.dataset.id}/ocr`, 'POST')) {
+            // Further action could be to display result in a modal
+        }
+    });
+    
+    document.getElementById('cmExtract').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        showToast('Extracting archive...', 'info');
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/extract`, 'POST')) setTimeout(() => location.reload(), 1000);
+    });
+
+    document.getElementById('cmConvert').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        const toFormat = prompt('Convert image to which format? (e.g., jpg, png, webp)', 'jpg');
+        if (!toFormat) return;
+        showToast(`Converting to ${toFormat}...`, 'info');
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/convert`, 'POST', { toFormat })) setTimeout(() => location.reload(), 1000);
+    });
+
+    const selectedIds = new Set();
+    document.querySelectorAll('.file-check').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+            const card = e.target.closest('.file-card');
+            if (e.target.checked) { selectedIds.add(e.target.value); card.classList.add('selected'); }
+            else { selectedIds.delete(e.target.value); card.classList.remove('selected'); }
+            const bar = document.getElementById('bulkActions');
+            document.getElementById('selectedCount').textContent = selectedIds.size;
+            if(selectedIds.size > 0) bar.classList.add('active'); else bar.classList.remove('active');
+        });
+    });
+
+    document.getElementById('emptyTrashBtn')?.addEventListener('click', async () => {
+        if(!confirm('Permanently delete all files in trash?')) return;
+        if(await performAction('/api/trash/empty', 'DELETE')) location.reload();
+    });
+
+    async function handleBulkAction(action, extraParams = {}) {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        if (await performAction('/api/files/bulk', 'POST', { fileIds: ids, action, ...extraParams })) location.reload();
+    }
+
+    document.getElementById('bulkDeleteBtn').addEventListener('click', () => handleBulkAction('delete'));
+    document.getElementById('bulkStarBtn').addEventListener('click', () => handleBulkAction('star'));
+    document.getElementById('bulkMoveBtn').addEventListener('click', () => {
+        const folderId = prompt("Enter destination folder ID (leave empty for root):");
+        if (folderId !== null) handleBulkAction('move', { targetFolderId: folderId || null });
     });
 });
 </script>

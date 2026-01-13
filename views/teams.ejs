@@ -1,33 +1,75 @@
 <%- include('partials/header', { title: 'My Teams', pageCss: 'dashboard' }) %>
 
-<main class="dashboard-container">
-    <div class="action-bar">
-        <h1>My Teams</h1>
-        <button class="primary-btn" onclick="document.getElementById('newTeamModal').classList.add('active')">
-            <i class="fa-solid fa-plus"></i> Create Team
-        </button>
-    </div>
+<div class="dashboard-layout">
+    <%- include('partials/sidebar') %>
 
-    <div class="file-grid">
-        <% teams.forEach(team => { %>
-            <div class="file-card" style="aspect-ratio: auto; height: auto;">
-                <div class="file-details" style="text-align: left; padding: 0.5rem;">
-                    <h3><%= team.name %></h3>
-                    <p class="meta">Members: <%= team.members.length %></p>
-                    <p class="meta">Storage: <%= (team.usedStorage/1024/1024).toFixed(2) %> / <%= (team.storageQuota/1024/1024).toFixed(0) %> MB</p>
-                    <button class="secondary-btn" style="margin-top: 10px; width: 100%;" onclick="openAddMember('<%= team._id %>')">Add Member</button>
-                </div>
+    <main class="main-content">
+        <section class="action-bar">
+            <div class="left-actions">
+                <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <h1 style="font-size: 1.5rem; margin: 0;">My Teams</h1>
             </div>
-        <% }) %>
-    </div>
-</main>
+            <div class="right-actions">
+                <button class="primary-btn" id="openNewTeamModalBtn">
+                    <i class="fa-solid fa-plus"></i> <span>Create Team</span>
+                </button>
+            </div>
+        </section>
+
+        <% if (teams.length === 0) { %>
+            <div class="empty-state" style="border: 2px dashed var(--border); border-radius: 1rem; background: var(--card);">
+                <i class="fa-solid fa-people-group"></i>
+                <p>You are not a member of any team yet.</p>
+                <button class="btn primary-btn" id="createFirstTeamBtn">Create Your First Team</button>
+            </div>
+        <% } else { %>
+            <div class="teams-grid">
+                <% teams.forEach(team => { %>
+                    <div class="team-card">
+                        <a href="/dashboard/teams/<%= team._id %>" class="team-card-main-link">
+                            <div class="team-card-header">
+                                <div class="team-icon">
+                                    <i class="fa-solid fa-people-group"></i>
+                                </div>
+                                <h3 class="team-name"><%= team.name %></h3>
+                            </div>
+                            <div class="team-members">
+                                <% team.members.slice(0, 5).forEach(member => { %>
+                                    <div class="member-avatar" title="<%= member.username %>">
+                                        <%= member.username.substring(0, 2).toUpperCase() %>
+                                    </div>
+                                <% }) %>
+                                <% if (team.members.length > 5) { %>
+                                    <div class="member-avatar more">+<%= team.members.length - 5 %></div>
+                                <% } %>
+                            </div>
+                            <div class="team-storage-info">
+                                <div class="progress-bar">
+                                    <div class="fill" style="width: <%= (team.usedStorage / team.storageQuota) * 100 %>%;"></div>
+                                </div>
+                                <small><%= (team.usedStorage/1024/1024).toFixed(2) %> MB of <%= (team.storageQuota/1024/1024/1024).toFixed(1) %> GB used</small>
+                            </div>
+                        </a>
+                        <div class="team-card-actions">
+                            <button class="btn secondary-btn" onclick="openAddMember('<%= team._id %>')">
+                                <i class="fa-solid fa-user-plus"></i> Add Member
+                            </button>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+        <% } %>
+    </main>
+</div>
 
 <div class="modal" id="newTeamModal">
     <div class="modal-box">
         <h3>Create New Team</h3>
         <input type="text" id="teamName" class="full-input" placeholder="Team Name">
         <div class="modal-footer">
-            <button class="btn cancel-btn" onclick="this.closest('.modal').classList.remove('active')">Cancel</button>
+            <button class="btn cancel-btn">Cancel</button>
             <button class="btn confirm-btn" id="createTeamBtn">Create</button>
         </div>
     </div>
@@ -38,21 +80,131 @@
         <h3>Add Member to Team</h3>
         <input type="text" id="memberUsername" class="full-input" placeholder="Username">
         <div class="modal-footer">
-            <button class="btn cancel-btn" onclick="this.closest('.modal').classList.remove('active')">Cancel</button>
+            <button class="btn cancel-btn">Cancel</button>
             <button class="btn confirm-btn" id="addMemberBtn">Add</button>
         </div>
     </div>
 </div>
 
+<style>
+    .teams-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+    .team-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        display: flex;
+        flex-direction: column;
+        transition: all 0.2s ease;
+    }
+    .team-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    }
+    .team-card-main-link {
+        padding: 1.5rem;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+    }
+    .team-card-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .team-icon {
+        width: 48px;
+        height: 48px;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: var(--primary);
+        flex-shrink: 0;
+    }
+    .team-name {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+        word-break: break-all;
+    }
+    .team-members {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    .member-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 0.8rem;
+        border: 2px solid var(--card);
+        margin-left: -10px;
+    }
+    .member-avatar:first-child {
+        margin-left: 0;
+    }
+    .member-avatar.more {
+        background: var(--muted-text);
+    }
+    .team-storage-info {
+        margin-top: auto;
+    }
+    .team-card-actions {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+    .team-card-actions .btn {
+        width: 100%;
+    }
+</style>
+
 <script>
+document.addEventListener('DOMContentLoaded', () => {
     let currentTeamId = null;
-    function openAddMember(id) {
+
+    const newTeamModal = document.getElementById('newTeamModal');
+    const addMemberModal = document.getElementById('addMemberModal');
+
+    document.getElementById('openNewTeamModalBtn')?.addEventListener('click', () => {
+        newTeamModal.classList.add('active');
+    });
+
+    document.getElementById('createFirstTeamBtn')?.addEventListener('click', () => {
+        newTeamModal.classList.add('active');
+    });
+
+    function closeModal() {
+        newTeamModal.classList.remove('active');
+        addMemberModal.classList.remove('active');
+    }
+
+    newTeamModal.querySelector('.cancel-btn').addEventListener('click', closeModal);
+    addMemberModal.querySelector('.cancel-btn').addEventListener('click', closeModal);
+
+    window.openAddMember = (id) => {
         currentTeamId = id;
-        document.getElementById('addMemberModal').classList.add('active');
+        addMemberModal.classList.add('active');
     }
 
     document.getElementById('createTeamBtn').addEventListener('click', async () => {
         const name = document.getElementById('teamName').value;
+        if (!name) return;
         const res = await fetch('/api/teams', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -63,14 +215,20 @@
 
     document.getElementById('addMemberBtn').addEventListener('click', async () => {
         const username = document.getElementById('memberUsername').value;
+        if (!username) return;
         const res = await fetch(`/api/teams/${currentTeamId}/add`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ username })
         });
-        if(res.ok) location.reload();
-        else showToast('User not found', 'error');
+        if(res.ok) {
+            showToast('Member added!', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('User not found or already in team', 'error');
+        }
     });
+});
 </script>
 
 <%- include('partials/footer') %>

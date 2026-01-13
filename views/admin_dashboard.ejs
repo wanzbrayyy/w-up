@@ -103,6 +103,36 @@
                 </div>
             </section>
 
+                <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
+                    <h3><i class="fa-solid fa-inbox"></i> Public Requests</h3>
+                    <ul style="list-style:none; padding:0; margin-top:1rem; max-height: 300px; overflow-y: auto;">
+                        <% if(publicRequests.length > 0) { %>
+                            <% publicRequests.forEach(req => { %>
+                                <li style="border-bottom:1px solid var(--border); padding-bottom:0.8rem; margin-bottom:0.8rem;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+                                        <strong><%= req.requestType.charAt(0).toUpperCase() + req.requestType.slice(1) %> Request</strong>
+                                        <span class="badge" style="background:var(--bg-secondary); color:var(--text); padding:2px 6px; border-radius:4px; font-size:0.7em;"><%= req.status %></span>
+                                    </div>
+                                    <small style="color:var(--muted-text); display: block; margin-bottom: 0.5rem;">From: <%= req.contactEmail %></small>
+                                    <% if (req.details.url) { %>
+                                        <p style="font-size:0.85rem; margin:0;">URL: <a href="<%= req.details.url %>" target="_blank" rel="noopener noreferrer"><%= req.details.url %></a></p>
+                                    <% } %>
+                                    <% if (req.details.botType) { %>
+                                        <p style="font-size:0.85rem; margin:0;">Bot: <%= req.details.botType %></p>
+                                    <% } %>
+                                     <% if (req.details.description) { %>
+                                        <p style="font-size:0.85rem; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<%= req.details.description %>">
+                                            Desc: <%= req.details.description.substring(0, 50) %>...
+                                        </p>
+                                    <% } %>
+                                </li>
+                            <% }) %>
+                        <% } else { %> 
+                            <li style="color:var(--muted-text); font-size:0.9rem;">No pending requests.</li> 
+                        <% } %>
+                    </ul>
+                </section>
+                
             <div class="sidebar-col" style="display:flex; flex-direction:column; gap:2rem;">
                 
                 <section class="admin-section" style="background:var(--card); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">

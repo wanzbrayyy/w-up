@@ -5,7 +5,6 @@ const os = require('os');
 const User = require('../models/user');
 const File = require('../models/file');
 const SystemConfig = require('../models/systemConfig');
-const PublicRequest = require('../models/publicRequest');
 const auth = require('../middleware/auth');
 
 router.use(auth.protectView, auth.protectAdmin);
@@ -18,7 +17,6 @@ router.get('/', async (req, res) => {
         const users = await User.find().sort({ createdAt: -1 }).limit(50);
         const topAffiliates = await User.find({ referralCount: { $gt: 0 } }).sort({ walletBalance: -1 }).limit(10);
         const config = await SystemConfig.getConfig();
-        const publicRequests = await PublicRequest.find({ status: 'Pending' }).sort({ createdAt: -1 }).limit(20);
 
         const cpus = os.cpus();
         const serverStats = {
@@ -37,8 +35,7 @@ router.get('/', async (req, res) => {
             users,
             topAffiliates,
             config,
-            serverStats,
-            publicRequests
+            serverStats
         });
     } catch (e) {
         res.status(500).send(`Admin Error: ${e.message}`);

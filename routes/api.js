@@ -18,10 +18,11 @@ const archiver = require('archiver');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
-const { r2, PutObjectCommand } = require('../utils/r2'); 
+const { r2, PutObjectCommand, GetObjectCommand } = require('../utils/r2');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
 const auth = require('../middleware/auth');
+const LinkVisit = require('../models/linkVisit');
 const {
     generatePasskeyRegistrationOptions,
     verifyPasskeyRegistration,
@@ -105,6 +106,7 @@ router.post('/folder', auth.protectApi, async (req, res) => {
 router.post('/upload', async (req, res) => {
     try {
         let user = null;
+        let ownerId = 'guest';
 
         if (req.headers.authorization || req.cookies.token) {
             await new Promise((resolve) => {
@@ -115,13 +117,20 @@ router.post('/upload', async (req, res) => {
             });
         }
 
-        if (!user && req.body.fileRequestSlug) {
+        if (req.body.publicProfileUsername) {
+            const publicUser = await User.findOne({ username: req.body.publicProfileUsername, isPublicProfile: true });
+            if (!publicUser) return res.status(403).json({ message: 'Public profile not found or uploads not allowed.' });
+            ownerId = publicUser._id;
+        } else if (user) {
+            ownerId = user._id;
+        } else if (req.body.fileRequestSlug) {
             const reqObj = await FileRequest.findOne({ slug: req.body.fileRequestSlug });
             if (reqObj) {
                 user = await User.findById(reqObj.owner);
+                ownerId = user._id;
                 req.body.parentId = reqObj.destinationFolder;
             }
-        } else if (!user && process.env.ALLOW_GUEST_UPLOAD !== 'true') {
+        } else if (process.env.ALLOW_GUEST_UPLOAD !== 'true') {
             return res.status(401).json({ message: 'Authentication required.' });
         }
 
@@ -150,8 +159,8 @@ router.post('/upload', async (req, res) => {
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
-        if (user) {
-            const duplicate = await File.findOne({ owner: user._id, md5Hash: hash, deletedAt: null });
+        if (ownerId !== 'guest') {
+            const duplicate = await File.findOne({ owner: ownerId, md5Hash: hash, deletedAt: null });
             if (duplicate) {
                 return res.status(200).json({
                     status: 'success',
@@ -173,8 +182,7 @@ router.post('/upload', async (req, res) => {
             counter++;
         }
         
-        const ownerId = user ? user._id.toString() : 'guest';
-        const r2Key = `${ownerId}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
+        const r2Key = `${ownerId.toString()}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
 
         const uploadCommand = new PutObjectCommand({
             Bucket: 'wanzofc',
@@ -192,7 +200,7 @@ router.post('/upload', async (req, res) => {
             size: buffer.length,
             storageType: 'r2',
             r2Key: r2Key,
-            owner: user ? user._id : null,
+            owner: ownerId !== 'guest' ? ownerId : null,
             parentId: parentId || null,
             description,
             tags: tags ? tags.split(',').map(t => t.trim()) : [],
@@ -324,7 +332,22 @@ router.put('/files/:id/rename', auth.protectApi, async (req, res) => {
         res.json({ message: 'Renamed successfully' });
     } catch (e) { res.status(500).json({ message: 'Error' }); }
 });
+router.get('/files/:id/share-details', auth.protectApi, async (req, res) => {
+    try {
+        const file = await File.findOne({ _id: req.params.id, owner: req.user.id })
+                                 .populate('collaborators.user', 'username');
 
+        if (!file) {
+            return res.status(404).json({ message: 'File not found.' });
+        }
+        res.json({
+            collaborators: file.collaborators,
+            shareLinks: file.shareLinks
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error.' });
+    }
+});
 router.put('/files/:id/meta', auth.protectApi, async (req, res) => {
     try {
         const { description, tags, isHidden } = req.body;
@@ -386,29 +409,31 @@ router.delete('/trash/empty', auth.protectApi, async (req, res) => {
 });
 
 router.post('/files/:id/collaborator', auth.protectApi, async (req, res) => {
-    const { username } = req.body;
+    const { username, role } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
     if (!file) return res.status(404).json({ message: 'File not found' });
     
     const collabUser = await User.findOne({ username });
     if (!collabUser) return res.status(404).json({ message: 'User not found' });
     
-    if (!file.collaborators.includes(collabUser._id)) {
-        file.collaborators.push(collabUser._id);
-        await file.save();
+    const existingCollabIndex = file.collaborators.findIndex(c => c.user.equals(collabUser._id));
+    if (existingCollabIndex > -1) {
+        file.collaborators[existingCollabIndex].role = role || 'viewer';
+    } else {
+        file.collaborators.push({ user: collabUser._id, role: role || 'viewer' });
     }
+    await file.save();
     
     if (collabUser.email) {
         const link = `${req.protocol}://${req.get('host')}/dashboard?folderId=${file._id}`; 
         const html = `<h3>You've been invited to collaborate!</h3>
-                      <p>${req.user.username} has added you to the folder/file: <b>${file.originalName}</b></p>
-                      <p><a href="${link}">Open Folder</a></p>`;
+                      <p>${req.user.username} has invited you to collaborate on: <b>${file.originalName}</b> with '${role}' permissions.</p>
+                      <p><a href="${link}">Open Item</a></p>`;
         await sendEmail(collabUser.email, `Collaboration Invite: ${file.originalName}`, html);
     }
 
-    res.json({ message: 'Collaborator added and notified' });
+    res.json({ message: 'Collaborator added/updated and notified' });
 });
-
 router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     const { email } = req.body;
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
@@ -510,12 +535,128 @@ router.post('/files/:alias/comment', auth.protectApi, async (req, res) => {
     const { text } = req.body;
     const file = await File.findOne({ customAlias: req.params.alias });
     if (!file) return res.status(404).json({ message: 'File not found' });
+
+    const mentions = [];
+    const usersToNotify = new Set();
+    const mentionRegex = /@(\w{3,})/g;
+    let match;
+
+    while ((match = mentionRegex.exec(text)) !== null) {
+        const user = await User.findOne({ username: match[1] });
+        if (user) {
+            mentions.push(user._id);
+            if (user.email) {
+                usersToNotify.add(user.email);
+            }
+        }
+    }
     
-    file.comments.push({ user: req.user.id, username: req.user.username, text });
+    const comment = { user: req.user.id, username: req.user.username, text, mentions };
+    file.comments.push(comment);
     await file.save();
+
+    usersToNotify.forEach(email => {
+        const link = `${req.protocol}://${req.get('host')}/w-upload/file/${file.customAlias}`;
+        const html = `<p>${req.user.username} mentioned you in a comment on <b>${file.originalName}</b>:</p><blockquote>${text.replace(/\n/g, '<br>')}</blockquote><p><a href="${link}">View Comment</a></p>`;
+        sendEmail(email, `You were mentioned by ${req.user.username}`, html);
+    });
+
     res.json({ message: 'Comment added', comment: file.comments[file.comments.length-1] });
 });
+router.post('/profile/branding', auth.protectApi, async (req, res) => {
+    const { logoUrl, primaryColor, pageTitle } = req.body;
+    if (req.user.plan !== 'pro') {
+        return res.status(403).json({ message: 'Branding is a Pro feature.' });
+    }
+    req.user.branding = {
+        logoUrl: logoUrl,
+        primaryColor: primaryColor,
+        pageTitle: pageTitle
+    };
+    await req.user.save();
+    res.json({ message: 'Branding settings updated.' });
+});
 
+router.post('/files/:id/transfer-ownership', auth.protectApi, async (req, res) => {
+    const { username } = req.body;
+    const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!file) return res.status(404).json({ message: 'File not found or you are not the owner.' });
+
+    const newOwner = await User.findOne({ username });
+    if (!newOwner) return res.status(404).json({ message: 'New owner user not found.' });
+
+    file.owner = newOwner._id;
+    file.collaborators = file.collaborators.filter(c => !c.user.equals(newOwner._id));
+    await file.save();
+    res.json({ message: `Ownership successfully transferred to ${newOwner.username}` });
+});
+
+router.post('/files/:id/share-links', auth.protectApi, async (req, res) => {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!file) return res.status(404).json({ message: 'File not found.' });
+
+    const newLink = {
+        linkId: crypto.randomBytes(8).toString('hex'),
+    };
+    file.shareLinks.push(newLink);
+    await file.save();
+
+    res.status(201).json({ message: 'New share link created.', link: newLink });
+});
+
+router.delete('/files/:id/share-links/:linkId', auth.protectApi, async (req, res) => {
+    await File.updateOne(
+        { _id: req.params.id, owner: req.user.id },
+        { $pull: { shareLinks: { linkId: req.params.linkId } } }
+    );
+    res.json({ message: 'Share link revoked.' });
+});
+
+router.post('/files/:id/request-signature', auth.protectApi, async (req, res) => {
+    const { username } = req.body;
+    const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!file || file.contentType !== 'application/pdf') {
+        return res.status(400).json({ message: 'File not found or is not a PDF.' });
+    }
+
+    const targetUser = await User.findOne({ username });
+    if (!targetUser) return res.status(404).json({ message: 'User to sign not found.' });
+
+    file.signatureRequests.push({ user: targetUser._id });
+    await file.save();
+    res.json({ message: `Signature requested from ${username}` });
+});
+
+router.post('/files/:id/annotations', auth.protectApi, async (req, res) => {
+    const { type, data } = req.body;
+    const file = await File.findById(req.params.id);
+    if (!file) return res.status(404).json({ message: 'File not found' });
+
+    const hasAccess = file.owner.equals(req.user.id) || 
+                      file.collaborators.some(c => c.user.equals(req.user.id) && c.role === 'editor');
+    if (!hasAccess) return res.status(403).json({ message: 'Permission denied.' });
+
+    file.annotations.push({ type, data, createdBy: req.user.id });
+    await file.save();
+    res.status(201).json({ message: 'Annotation saved.' });
+});
+
+router.get('/files/:id/analytics', auth.protectApi, async (req, res) => {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!file) return res.status(404).json({ message: 'File not found.' });
+
+    const analytics = await LinkVisit.aggregate([
+        { $match: { file: file._id } },
+        { $group: { 
+            _id: "$geo.country",
+            views: { $sum: { $cond: [{ $eq: ["$type", "view"] }, 1, 0] } },
+            downloads: { $sum: { $cond: [{ $eq: ["$type", "download"] }, 1, 0] } }
+        }},
+        { $sort: { downloads: -1, views: -1 } }
+    ]);
+    
+    res.json(analytics);
+});
 router.post('/files/:alias/react', auth.protectApi, async (req, res) => {
     const { type } = req.body;
     const file = await File.findOne({ customAlias: req.params.alias });
@@ -968,32 +1109,56 @@ router.post('/files/:id/convert', auth.protectApi, async (req, res) => {
 });
 
 // Endpoint untuk mengekstrak arsip
-router.post('/files/:id/extract', auth.protectApi, async (req, res) => {
+// Endpoint untuk mengekstrak arsip (SEKARANG PUBLIK)
+router.post('/files/:id/extract', async (req, res) => {
     try {
+        // Cek otentikasi secara opsional
+        let user = null;
+        if (req.cookies.token) {
+            try {
+                const decoded = jwt.verify(req.cookies.token, process.env.JWT_SECRET);
+                user = await User.findById(decoded.id);
+            } catch (e) {
+                // Abaikan jika token tidak valid, lanjutkan sebagai tamu
+            }
+        }
+        
         const file = await File.findById(req.params.id);
-        if (!file || !file.contentType.includes('zip')) return res.status(400).json({ message: 'File is not a zip archive.' });
-        if (file.storageType !== 'r2') return res.status(400).json({ message: 'File not processable.' });
+        if (!file || !file.contentType.includes('zip') || file.storageType !== 'r2') {
+            return res.status(400).json({ message: 'File is not a processable zip archive.' });
+        }
+
+        const ownerId = user ? user._id : 'guest_extract';
+        const parentId = user ? (file.parentId || null) : null;
 
         const newFolderName = path.basename(file.originalName, path.extname(file.originalName)) + "_extracted";
-        const parentFolder = new File({
-            originalName: newFolderName,
-            customAlias: `${newFolderName}_${Date.now()}`,
-            isFolder: true,
-            contentType: 'application/vnd.google-apps.folder',
-            owner: req.user.id,
-            parentId: file.parentId,
-            size: 0
-        });
-        await parentFolder.save();
+        
+        // Buat folder induk hanya jika pengguna login
+        let parentFolder = null;
+        if (user) {
+            parentFolder = new File({
+                originalName: newFolderName,
+                customAlias: `${newFolderName}_${Date.now()}`,
+                isFolder: true,
+                contentType: 'application/vnd.google-apps.folder',
+                owner: ownerId,
+                parentId: parentId,
+                size: 0
+            });
+            await parentFolder.save();
+        }
 
         const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
         
         const extractedFiles = [];
         const stream = Body.pipe(unzipper.Parse({ forceStream: true }));
+
         for await (const entry of stream) {
             const buffer = await entry.buffer();
-            const finalAlias = `${Date.now()}_${entry.path}`;
-            const r2Key = `${req.user.id}/${finalAlias}`;
+            if (entry.type === 'Directory') continue; // Lewati direktori
+
+            const finalAlias = `${Date.now()}_${entry.path.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            const r2Key = `${ownerId}/${finalAlias}`;
             
             await r2.send(new PutObjectCommand({
                 Bucket: process.env.R2_BUCKET_NAME, Key: r2Key, Body: buffer, ContentType: 'application/octet-stream'
@@ -1006,15 +1171,32 @@ router.post('/files/:id/extract', auth.protectApi, async (req, res) => {
                 size: buffer.length,
                 storageType: 'r2',
                 r2Key,
-                owner: req.user.id,
-                parentId: parentFolder._id
+                owner: user ? ownerId : null, // Hanya set owner jika user login
+                parentId: parentFolder ? parentFolder._id : null // Hanya set parent jika folder dibuat
             });
             await newFile.save();
             extractedFiles.push(newFile);
         }
 
-        res.status(201).json({ message: 'Archive extracted successfully.', folder: parentFolder, files: extractedFiles });
+        // Jika tamu, kembalikan daftar tautan file, bukan folder
+        if (!user) {
+            const fileLinks = extractedFiles.map(f => ({
+                name: f.originalName,
+                url: `${req.protocol}://${req.get('host')}/w-upload/file/${f.customAlias}`
+            }));
+            return res.status(201).json({ 
+                message: 'Archive extracted successfully as individual files.', 
+                files: fileLinks 
+            });
+        }
+
+        res.status(201).json({ 
+            message: 'Archive extracted successfully into a new folder.', 
+            folder: parentFolder, 
+            files: extractedFiles 
+        });
     } catch (error) {
+        console.error("Extraction Error:", error);
         res.status(500).json({ message: 'Extraction failed.', error: error.message });
     }
 });

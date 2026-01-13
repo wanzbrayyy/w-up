@@ -1,9 +1,16 @@
 <%- include('partials/header', { title: 'Image Editor' }) %>
 <link rel="stylesheet" href="https://uicdn.toast.com/tui-image-editor/latest/tui-image-editor.css">
-<style>body { background: #1a1a1a; } .tui-image-editor-container { margin: 20px auto; }</style>
+<style>
+    body { background: #1a1a1a; } 
+    .tui-image-editor-container { margin: 20px auto; }
+    .top-bar-controls { position:fixed; top:20px; right:20px; z-index:10; display:flex; gap:10px; }
+</style>
 
+<div class="top-bar-controls">
+    <button id="annotateBtn" class="btn secondary-btn">Add Note</button>
+    <button id="saveBtn" class="btn primary-btn">Save Changes</button>
+</div>
 <div id="tui-image-editor-container"></div>
-<button id="saveBtn" style="position:fixed; top:20px; right:20px; z-index:10;">Save Changes</button>
 
 <script src="https://uicdn.toast.com/tui-image-editor/latest/tui-image-editor.js"></script>
 <script>
@@ -28,6 +35,18 @@
             body: JSON.stringify({ base64 })
         });
         if (res.ok) alert('Saved!'); else alert('Failed!');
+    });
+    
+    document.getElementById('annotateBtn').addEventListener('click', async () => {
+        const text = prompt("Enter your annotation/comment:");
+        if (!text) return;
+        const data = { text, x: 100, y: 100 };
+        await fetch('/api/files/<%= file._id %>/annotations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'comment', data })
+        });
+        alert('Note added (Proof of Concept)');
     });
 </script>
 <%- include('partials/footer') %>

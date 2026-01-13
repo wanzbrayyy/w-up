@@ -1,46 +1,67 @@
-<%- include('partials/header', { title: `Download ${file.originalName}`, pageCss: 'download' }) %>
+<%
+    const owner = file.owner;
+    const branding = (owner && owner.plan === 'pro' && owner.branding) ? owner.branding : {};
+    const pageTitle = branding.pageTitle || `Download ${file.originalName}`;
+    const primaryColor = branding.primaryColor || '#4F46E5';
+%>
+
+<%- include('partials/header', { title: pageTitle, pageCss: 'download' }) %>
+
+<style>
+    :root {
+        --branded-primary: <%= primaryColor %>;
+    }
+    .btn-download { background: var(--branded-primary); }
+    .action-btn.secondary:hover { border-color: var(--branded-primary); color: var(--branded-primary); }
+    #timer { color: var(--branded-primary); }
+    .comment-list .mention { color: var(--branded-primary); font-weight: 600; text-decoration: none; }
+</style>
 
 <main class="download-page-container">
     <div class="download-card">
-        <div class="file-icon-wrapper">
-            <% if (file.isFolder) { %>
-                <i class="fa-solid fa-folder-open file-icon" style="color: #fbbf24;"></i>
-            <% } else if (file.contentType.startsWith('image/')) { %>
-                <i class="fa-solid fa-image file-icon"></i>
-            <% } else if (file.contentType.startsWith('video/')) { %>
-                <i class="fa-solid fa-video file-icon"></i>
-            <% } else if (file.contentType.startsWith('audio/')) { %>
-                <i class="fa-solid fa-music file-icon"></i>
-            <% } else if (file.contentType.includes('zip') || file.contentType.includes('archive')) { %>
-                <i class="fa-solid fa-file-zipper file-icon"></i>
-            <% } else { %>
-                <i class="fa-solid fa-file-arrow-down file-icon"></i>
-            <% } %>
-        </div>
+        <% if (branding.logoUrl) { %>
+            <img src="<%= branding.logoUrl %>" alt="Logo" style="max-height: 50px; margin-bottom: 1.5rem;">
+        <% } else { %>
+            <div class="file-icon-wrapper">
+                <% if (file.isFolder) { %>
+                    <i class="fa-solid fa-folder-open file-icon" style="color: #fbbf24;"></i>
+                <% } else if (file.contentType.startsWith('image/')) { %>
+                    <i class="fa-solid fa-image file-icon"></i>
+                <% } else if (file.contentType.startsWith('video/')) { %>
+                    <i class="fa-solid fa-video file-icon"></i>
+                <% } else if (file.contentType.startsWith('audio/')) { %>
+                    <i class="fa-solid fa-music file-icon"></i>
+                <% } else if (file.contentType.includes('zip') || file.contentType.includes('archive')) { %>
+                    <i class="fa-solid fa-file-zipper file-icon"></i>
+                <% } else { %>
+                    <i class="fa-solid fa-file-arrow-down file-icon"></i>
+                <% } %>
+            </div>
+        <% } %>
         
         <h1 class="filename"><%= file.originalName %></h1>
         <div class="file-meta">
             <% if (file.isFolder) { %>
-                Type: Folder Archive &bull; 
+                <span>Folder Archive</span> &bull; 
             <% } else { %>
-                Size: <%= (file.size / 1024 / 1024).toFixed(2) %> MB &bull; 
+                <span><%= (file.size / 1024 / 1024).toFixed(2) %> MB</span> &bull; 
             <% } %>
-            Uploaded: <%= new Date(file.createdAt).toLocaleDateString() %> &bull;
-            Downloads: <%= file.downloads %>
+            <span><i class="fa-solid fa-eye"></i> <%= totalViews %> Views</span> &bull;
+            <span><i class="fa-solid fa-download"></i> <%= file.downloads %> Downloads</span>
         </div>
 
         <div id="virusStatus" style="margin-bottom: 1rem; display: none;"></div>
 
-        <div class="preview-area" style="display: block; margin-bottom: 1.5rem;">
+        <div class="preview-area">
             <% if (!file.isFolder) { %>
                 <% if (file.contentType.startsWith('image/')) { %>
-                    <img src="<%= downloadLink %>" alt="Preview" class="preview-content" style="max-width: 100%; border-radius: 8px;">
+                    <img src="<%= downloadLink %>" alt="Preview" class="preview-content">
                 <% } else if (file.contentType.startsWith('video/')) { %>
-                    <video controls class="preview-content" style="max-width: 100%; border-radius: 8px;">
+                    <video controls class="preview-content">
                         <source src="<%= downloadLink %>" type="<%= file.contentType %>">
                     </video>
                 <% } else if (file.contentType.startsWith('audio/')) { %>
-                    <audio controls class="preview-content" style="width: 100%; margin-top: 1rem;">
+                    <audio controls class="preview-content">
                         <source src="<%= downloadLink %>" type="<%= file.contentType %>">
                     </audio>
                 <% } %>
@@ -52,10 +73,10 @@
         <% } %>
 
         <% if (!locals.user || locals.user.plan === 'free') { %>
-            <div id="countdownContainer" style="margin-bottom: 1rem;">
-                <p>your download will start in <span id="timer" style="font-weight:bold; color:var(--primary);">10</span> seconds...</p>
+            <div id="countdownContainer">
+                <p>Your download will start in <span id="timer">10</span> seconds...</p>
             </div>
-            <a href="<%= downloadLink %>" class="btn-download disabled" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %> style="pointer-events: none; opacity: 0.6;">
+            <a href="<%= downloadLink %>" class="btn-download disabled" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
                 <i class="fa-solid fa-spinner fa-spin"></i> Please Wait...
             </a>
         <% } else { %>
@@ -68,7 +89,7 @@
             </a>
         <% } %>
 
-        <div class="action-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 1rem;">
+        <div class="action-grid">
             <% if (locals.isLoggedIn) { %>
                 <button class="action-btn secondary" id="saveToAccountBtn">
                     <i class="fa-solid fa-cloud-arrow-down"></i> Save
@@ -82,9 +103,9 @@
             </button>
         </div>
 
-        <div class="hash-info" style="margin-top: 1.5rem; text-align: left; background: var(--bg); padding: 1rem; border-radius: 8px; border: 1px solid var(--border); font-size: 0.85rem;">
-            <div style="margin-bottom: 5px;"><strong>MD5:</strong> <code style="word-break: break-all;"><%= file.md5Hash || 'n/a' %></code></div>
-            <div><strong>SHA256:</strong> <code style="word-break: break-all;"><%= file.sha256Hash || 'n/a' %></code></div>
+        <div class="hash-info">
+            <div><strong>MD5:</strong> <code><%= file.md5Hash || 'n/a' %></code></div>
+            <div><strong>SHA256:</strong> <code><%= file.sha256Hash || 'n/a' %></code></div>
         </div>
 
         <div class="share-buttons">
@@ -109,23 +130,23 @@
     </div>
 
     <div class="comments-section">
-        <h3>Comments</h3>
+        <h3>Comments (<%= file.comments ? file.comments.length : 0 %>)</h3>
         <div class="comment-list" id="commentList">
             <% if(file.comments && file.comments.length > 0) { %>
                 <% file.comments.forEach(c => { %>
                     <div class="comment">
                         <strong><%= c.username %></strong>
-                        <p><%= c.text %></p>
+                        <p><%- c.text.replace(/@(\w+)/g, '<a href="/u/$1" class="mention">@$1</a>') %></p>
                         <small><%= new Date(c.createdAt).toLocaleDateString() %></small>
                     </div>
                 <% }) %>
             <% } else { %>
-                <p style="color: var(--muted-text); text-align: center;">No comments yet.</p>
+                <p class="text-muted">No comments yet. Be the first to comment!</p>
             <% } %>
         </div>
         <% if (isLoggedIn) { %>
             <form id="commentForm">
-                <input type="text" name="text" placeholder="Write a comment..." required>
+                <input type="text" name="text" placeholder="Write a comment... (use @username to mention)" required>
                 <button type="submit">Post</button>
             </form>
         <% } else { %>
@@ -134,156 +155,154 @@
     </div>
 </main>
 
-<div class="modal-backdrop" id="qrModal">
-    <div class="modal-content" style="text-align: center;">
-        <div class="modal-header"><h3>Scan to Download</h3><button class="modal-close">&times;</button></div>
+<div class="modal" id="qrModal">
+    <div class="modal-box" style="text-align: center;">
+        <h3>Scan to Download</h3>
         <img id="qrImage" src="" alt="QR Code" style="max-width: 200px; margin: 1rem auto;">
         <p>Scan this code with your mobile camera.</p>
+        <div class="modal-footer"><button class="btn cancel-btn">Close</button></div>
     </div>
 </div>
 
-<div class="modal-backdrop" id="reportModal">
-    <div class="modal-content">
-        <div class="modal-header"><h3>Report File</h3><button class="modal-close">&times;</button></div>
+<div class="modal" id="reportModal">
+    <div class="modal-box">
+        <h3>Report File</h3>
         <form id="reportForm">
-            <div class="modal-form-group">
+            <div class="form-group">
                 <label>Category</label>
-                <select name="category" class="modal-input">
+                <select name="category" class="full-input">
                     <option>Copyright Violation</option>
                     <option>Malware/Virus</option>
                     <option>Inappropriate Content</option>
                     <option>Other</option>
                 </select>
             </div>
-            <div class="modal-form-group">
+            <div class="form-group">
                 <label>Reason</label>
-                <textarea name="reason" class="modal-input" rows="3" required></textarea>
+                <textarea name="reason" class="full-input" rows="3" required></textarea>
             </div>
-            <button type="submit" class="action-btn" style="width:100%; background: #ef4444; color: white;">Submit Report</button>
+            <button type="submit" class="btn danger-btn" style="width:100%;">Submit Report</button>
         </form>
+        <div class="modal-footer" style="margin-top:1rem;"><button class="btn cancel-btn">Cancel</button></div>
     </div>
 </div>
 
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const downloadBtn = document.getElementById('downloadLinkBtn');
-        const timerSpan = document.getElementById('timer');
-        const countdownContainer = document.getElementById('countdownContainer');
-        const isFolder = <%= file.isFolder %>;
+document.addEventListener('DOMContentLoaded', () => {
+    const downloadBtn = document.getElementById('downloadLinkBtn');
+    const timerSpan = document.getElementById('timer');
+    const countdownContainer = document.getElementById('countdownContainer');
+    const isFolder = <%= file.isFolder %>;
 
-        if (timerSpan) {
-            let timeLeft = 10;
-            const interval = setInterval(() => {
-                timeLeft--;
-                timerSpan.textContent = timeLeft;
-                if (timeLeft <= 0) {
-                    clearInterval(interval);
-                    countdownContainer.style.display = 'none';
-                    downloadBtn.style.pointerEvents = 'auto';
-                    downloadBtn.style.opacity = '1';
-                    downloadBtn.innerHTML = isFolder ? '<i class="fa-solid fa-file-zipper"></i> Download Folder as ZIP' : '<i class="fa-solid fa-download"></i> Download File';
-                    downloadBtn.classList.remove('disabled');
-                }
-            }, 1000);
-        }
-
-        window.scanVirus = async () => {
-            const btn = document.getElementById('scanBtn');
-            const statusDiv = document.getElementById('virusStatus');
-            
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning...';
-            btn.disabled = true;
-            statusDiv.style.display = 'block';
-            statusDiv.innerHTML = `<div class="alert-box" style="background:#dbeafe; color:#1e40af;"><i class="fa-solid fa-spinner fa-spin"></i> Checking file safety...</div>`;
-
-            try {
-                const res = await fetch('/api/files/<%= file._id %>/scan', { method: 'POST' });
-                const data = await res.json();
-                
-                if (data.status === 'clean') {
-                    statusDiv.innerHTML = `<div class="alert-box" style="background:#dcfce7; color:#166534;"><i class="fa-solid fa-shield-virus"></i> Safe / Clean (VirusTotal)</div>`;
-                } else if (data.status === 'infected') {
-                    statusDiv.innerHTML = `<div class="alert-box" style="background:#fee2e2; color:#b91c1c;"><i class="fa-solid fa-triangle-exclamation"></i> Threat Detected!</div>`;
-                } else {
-                    statusDiv.innerHTML = `<div class="alert-box" style="background:#f3f4f6; color:#4b5563;"><i class="fa-solid fa-circle-question"></i> Scan Unavailable / Queued</div>`;
-                }
-            } catch (e) {
-                statusDiv.style.display = 'none';
-                showToast('Scan failed', 'error');
-            } finally {
-                btn.innerHTML = '<i class="fa-solid fa-shield-virus"></i> Scan Virus';
-                btn.disabled = false;
+    if (timerSpan) {
+        let timeLeft = 10;
+        const interval = setInterval(() => {
+            timeLeft--;
+            timerSpan.textContent = timeLeft;
+            if (timeLeft <= 0) {
+                clearInterval(interval);
+                countdownContainer.style.display = 'none';
+                downloadBtn.style.pointerEvents = 'auto';
+                downloadBtn.style.opacity = '1';
+                downloadBtn.innerHTML = isFolder ? '<i class="fa-solid fa-file-zipper"></i> Download Folder as ZIP' : '<i class="fa-solid fa-download"></i> Download File';
+                downloadBtn.classList.remove('disabled');
             }
-        };
+        }, 1000);
+    }
 
-        const saveBtn = document.getElementById('saveToAccountBtn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', async () => {
-                if(!confirm('Save this file to your account?')) return;
-                const res = await fetch('/api/files/<%= file._id %>/import', { method: 'POST' });
-                const data = await res.json();
-                if(res.ok) showToast(data.message, 'success');
-                else showToast(data.message, 'error');
-            });
+    window.scanVirus = async () => {
+        const btn = document.getElementById('scanBtn');
+        const statusDiv = document.getElementById('virusStatus');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = `<div class="alert-box info"><i class="fa-solid fa-spinner fa-spin"></i> Checking file safety...</div>`;
+        try {
+            const res = await fetch('/api/files/<%= file._id %>/scan', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'clean') statusDiv.innerHTML = `<div class="alert-box success"><i class="fa-solid fa-shield-virus"></i> Safe / Clean (VirusTotal)</div>`;
+            else if (data.status === 'infected') statusDiv.innerHTML = `<div class="alert-box danger"><i class="fa-solid fa-triangle-exclamation"></i> Threat Detected!</div>`;
+            else statusDiv.innerHTML = `<div class="alert-box warning"><i class="fa-solid fa-circle-question"></i> Scan Unavailable / Queued</div>`;
+        } catch (e) {
+            statusDiv.style.display = 'none';
+            showToast('Scan failed', 'error');
+        } finally {
+            btn.innerHTML = '<i class="fa-solid fa-shield-virus"></i> Scan Virus';
+            btn.disabled = false;
         }
+    };
 
-        window.showQrCode = async () => {
-            const modal = document.getElementById('qrModal');
-            const img = document.getElementById('qrImage');
-            modal.classList.add('active');
-            
-            if(!img.src) {
-                const res = await fetch('/api/files/<%= file.customAlias %>/qrcode');
-                const data = await res.json();
-                img.src = data.qrCode;
-            }
-        };
-
-        const reportModal = document.getElementById('reportModal');
-        document.getElementById('reportBtn').addEventListener('click', () => reportModal.classList.add('active'));
-        document.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => {
-            reportModal.classList.remove('active');
-            document.getElementById('qrModal').classList.remove('active');
-        }));
-
-        document.getElementById('reportForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = Object.fromEntries(new FormData(e.target));
-            const res = await fetch('/api/report/<%= file.customAlias %>', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
-            });
-            if (res.ok) { showToast('Report submitted.', 'success'); reportModal.classList.remove('active'); }
+    const saveBtn = document.getElementById('saveToAccountBtn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            if(!confirm('Save this file to your account?')) return;
+            const res = await fetch('/api/files/<%= file._id %>/import', { method: 'POST' });
+            const data = await res.json();
+            if(res.ok) showToast(data.message, 'success');
+            else showToast(data.message, 'error');
         });
+    }
 
-        window.react = async (type) => {
-            const res = await fetch('/api/files/<%= file.customAlias %>/react', {
+    const allModals = document.querySelectorAll('.modal');
+    function closeModal() { allModals.forEach(m => m.classList.remove('active')); }
+    allModals.forEach(modal => {
+        modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+        modal.querySelector('.cancel-btn')?.addEventListener('click', closeModal);
+    });
+
+    window.showQrCode = async () => {
+        const modal = document.getElementById('qrModal');
+        const img = document.getElementById('qrImage');
+        modal.classList.add('active');
+        if(!img.src) {
+            const res = await fetch('/api/files/<%= file.customAlias %>/qrcode');
+            const data = await res.json();
+            img.src = data.qrCode;
+        }
+    };
+
+    const reportModal = document.getElementById('reportModal');
+    document.getElementById('reportBtn').addEventListener('click', () => reportModal.classList.add('active'));
+
+    document.getElementById('reportForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(e.target));
+        const res = await fetch('/api/report/<%= file.customAlias %>', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        if (res.ok) { showToast('Report submitted.', 'success'); closeModal(); }
+    });
+
+    window.react = async (type) => {
+        const res = await fetch('/api/files/<%= file.customAlias %>/react', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type})
+        });
+        const data = await res.json();
+        if(res.ok) {
+            document.getElementById('likeCount').textContent = data.counts.like;
+            document.getElementById('loveCount').textContent = data.counts.love;
+        }
+    };
+
+    const commentForm = document.getElementById('commentForm');
+    if(commentForm) {
+        commentForm.addEventListener('submit', async(e) => {
+            e.preventDefault();
+            const text = e.target.text.value;
+            if(!text) return;
+            const res = await fetch('/api/files/<%= file.customAlias %>/comment', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({type})
+                body: JSON.stringify({text})
             });
-            const data = await res.json();
-            if(res.ok) {
-                document.getElementById('likeCount').textContent = data.counts.like;
-                document.getElementById('loveCount').textContent = data.counts.love;
-            }
-        };
-
-        const commentForm = document.getElementById('commentForm');
-        if(commentForm) {
-            commentForm.addEventListener('submit', async(e) => {
-                e.preventDefault();
-                const text = e.target.text.value;
-                const res = await fetch('/api/files/<%= file.customAlias %>/comment', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({text})
-                });
-                if(res.ok) location.reload();
-            });
-        }
-    });
+            if(res.ok) location.reload();
+        });
+    }
+});
 </script>
 
 <%- include('partials/footer') %>

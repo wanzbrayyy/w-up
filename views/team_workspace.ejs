@@ -1,0 +1,60 @@
+<%- include('partials/header', { title: team.name, pageCss: 'dashboard' }) %>
+
+<div class="dashboard-layout">
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content">
+        <section class="action-bar" style="align-items: flex-start;">
+            <div class="left-actions">
+                <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div>
+                    <h1 style="font-size: 1.5rem; margin: 0;"><i class="fa-solid fa-people-group"></i> <%= team.name %></h1>
+                    <p style="color: var(--muted-text); margin-top: 5px;">Workspace Terpusat</p>
+                </div>
+            </div>
+            <div class="right-actions">
+                <div class="team-members-widget" style="background: var(--card); padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.9rem;">Anggota Tim</h4>
+                    <div class="members-list" style="display: flex; gap: 10px;">
+                        <% team.members.forEach(member => { %>
+                            <div class="member-avatar" title="<%= member.username %>" style="width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; text-transform: uppercase;">
+                                <%= member.username.substring(0, 2) %>
+                            </div>
+                        <% }) %>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="file-grid" id="fileGrid">
+            <% if (files.length === 0) { %>
+                <div class="empty-state">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <p>Tidak ada file di tim ini.</p>
+                </div>
+            <% } %>
+
+            <% files.forEach(file => { %>
+                <div class="file-card <%= file.isFolder ? 'folder' : '' %>">
+                    <div class="file-preview">
+                        <% if (file.isFolder) { %><i class="fa-solid fa-folder folder-icon"></i>
+                        <% } else if (file.contentType.startsWith('image/')) { %><i class="fa-solid fa-image image-icon"></i>
+                        <% } else { %><i class="fa-solid fa-file file-icon"></i><% } %>
+                    </div>
+                    <div class="file-details">
+                        <a href="<%= file.isFolder ? `/dashboard?folderId=${file._id}` : `/w-upload/file/${file.customAlias}` %>" class="filename">
+                            <%= file.originalName %>
+                        </a>
+                        <div class="meta">
+                            Dimiliki oleh: <%= file.owner.username %>
+                        </div>
+                    </div>
+                </div>
+            <% }) %>
+        </section>
+    </main>
+</div>
+
+<%- include('partials/footer') %>
