@@ -12,7 +12,6 @@ const { loadSystemConfig } = require('./middleware/system');
 
 const app = express();
 
-// Import Routes
 const authRoutes = require('./routes/auth');
 const viewRoutes = require('./routes/view');
 const apiRoutes = require('./routes/api');
@@ -76,24 +75,23 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+app.get('/robots.txt', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'robots.txt'));
+});
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('MongoDB Connection Error:', err));
 
-// CSRF Configuration
 const csrfProtection = csurf({ cookie: true });
 
-// Middleware untuk CSRF dengan pengecualian untuk API
 app.use((req, res, next) => {
-  // Lewati CSRF jika ada header x-api-key ATAU jika request mengarah ke endpoint API/Auth
-  // Ini penting agar fetch request untuk passkey/login tidak error 403
   if (req.headers['x-api-key'] || req.path.startsWith('/api/') || req.path.startsWith('/api/auth/')) {
     return next();
   }
   csrfProtection(req, res, next);
 });
 
-// Set locals csrfToken untuk View
 app.use((req, res, next) => {
   if (req.csrfToken) {
     res.locals.csrfToken = req.csrfToken();
@@ -113,19 +111,12 @@ app.get('/ads.txt', async (req, res) => {
     }
 });
 
-// ROUTE MOUNTING (Urutan Penting)
-// 1. Mount Auth Routes ke /api/auth agar sesuai dengan fetch di frontend
 app.use('/api/auth', authRoutes);
-
-// 2. Mount API Routes lainnya
 app.use('/api/ai', aiRoutes);
 app.use('/api', apiRoutes);
-
-// 3. Mount Admin & View Routes
 app.use('/admin', adminRoutes);
 app.use('/', viewRoutes);
 
-// Error Handler
 app.use((err, req, res, next) => {
   if (err.code === 'EBADCSRFTOKEN') {
     return res.status(403).json({ status: 'error', message: 'Invalid or missing CSRF Token' });
