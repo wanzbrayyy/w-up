@@ -1,0 +1,19 @@
+# robots.txt for w-upload
+
+User-agent: *
+
+# Disallow crawling of private user areas and functional endpoints
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /profile/
+Disallow: /api/
+Disallow: /w-upload/
+Disallow: /req/
+Disallow: /billing/
+Disallow: /logout
+
+# Allow crawling of public user profiles
+Allow: /u/
+
+# Sitemap location (recommended)
+Sitemap: https://wanzofc.site/sitemap.xml
