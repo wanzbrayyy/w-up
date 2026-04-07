@@ -51,7 +51,17 @@
             const used = user.storageUsed || 0;
             const percentage = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
         %>
-        <div class="progress-bar"><div class="fill" style="width: <%= percentage %>%"></div></div>
-        <small><%= (used / 1024 / 1024 / 1024).toFixed(2) %> GB / <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB</small>
+        <div class="storage-label-row">
+            <span>Storage</span>
+            <strong id="storagePercent"><%= percentage.toFixed(1) %>%</strong>
+        </div>
+        <div class="progress-bar">
+            <div class="fill" id="storageFill" style="width: <%= percentage %>%"></div>
+        </div>
+        <small id="storageMeta"
+            data-storage-used="<%= used %>"
+            data-storage-total="<%= totalLimit %>">
+            <%= (used / 1024 / 1024 / 1024).toFixed(2) %> GB / <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB
+        </small>
     </div>
 </aside>

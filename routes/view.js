@@ -98,68 +98,44 @@ router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
     } catch (e) { res.status(500).render('404'); }
 });
 
-router.get('/ref/:username/banner.png', auth.checkAuthStatus, async (req, res) => {
+router.get('/ref/:username/banner.svg', auth.checkAuthStatus, async (req, res) => {
     try {
         const referrer = await User.findOne({ username: req.params.username }).select('username referralCode referralCount branding');
         if (!referrer) return res.status(404).send('Referral banner not found.');
 
-        const width = 1200;
-        const height = 630;
-        const primary = referrer.branding?.primaryColor || '#1d4ed8';
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
+        const primary = escapeXml(referrer.branding?.primaryColor || '#1d4ed8');
+        const username = escapeXml(referrer.username || 'user');
+        const referralCode = escapeXml(referrer.referralCode || 'N/A');
+        const referralCount = escapeXml(String(referrer.referralCount || 0));
 
-        const gradient = ctx.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, '#081226');
-        gradient.addColorStop(0.55, primary);
-        gradient.addColorStop(1, '#f97316');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
+        const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#081226"/>
+      <stop offset="0.58" stop-color="${primary}"/>
+      <stop offset="1" stop-color="#F97316"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="0" fill="url(#bg)"/>
+  <circle cx="980" cy="120" r="150" fill="rgba(255,255,255,0.08)"/>
+  <circle cx="180" cy="520" r="220" fill="rgba(255,255,255,0.08)"/>
+  <text x="72" y="88" fill="white" font-size="34" font-weight="700" font-family="Arial, Helvetica, sans-serif">w upload referral</text>
+  <text x="72" y="210" fill="white" font-size="72" font-weight="800" font-family="Arial, Helvetica, sans-serif">Gabung lewat @${username}</text>
+  <text x="72" y="278" fill="rgba(255,255,255,0.88)" font-size="34" font-weight="500" font-family="Arial, Helvetica, sans-serif">Dapat bonus storage dan akses workspace yang lebih rapi.</text>
+  <rect x="72" y="342" width="420" height="136" rx="24" fill="rgba(255,255,255,0.14)"/>
+  <text x="108" y="390" fill="white" font-size="28" font-weight="600" font-family="Arial, Helvetica, sans-serif">Referral code</text>
+  <text x="108" y="448" fill="white" font-size="48" font-weight="800" font-family="Arial, Helvetica, sans-serif">${referralCode}</text>
+  <rect x="538" y="342" width="300" height="136" rx="24" fill="rgba(255,255,255,0.18)"/>
+  <text x="574" y="390" fill="white" font-size="28" font-weight="600" font-family="Arial, Helvetica, sans-serif">Total referrals</text>
+  <text x="574" y="448" fill="white" font-size="48" font-weight="800" font-family="Arial, Helvetica, sans-serif">${referralCount}</text>
+  <rect x="72" y="532" width="330" height="10" rx="5" fill="#FEF3C7"/>
+  <text x="72" y="580" fill="white" font-size="26" font-weight="600" font-family="Arial, Helvetica, sans-serif">Bonus 50 MB untuk referrer dan pengguna baru</text>
+</svg>`;
 
-        ctx.fillStyle = 'rgba(255,255,255,0.10)';
-        ctx.beginPath();
-        ctx.arc(980, 120, 150, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(180, 520, 220, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 34px sans-serif';
-        ctx.fillText('w upload referral', 72, 88);
-
-        ctx.font = '800 74px sans-serif';
-        ctx.fillText(`Gabung lewat @${referrer.username}`, 72, 210);
-
-        ctx.font = '500 34px sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.88)';
-        ctx.fillText('Dapat bonus storage dan akses workspace yang lebih rapi.', 72, 278);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.fillRect(72, 342, 420, 136);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '600 28px sans-serif';
-        ctx.fillText('Referral code', 108, 390);
-        ctx.font = '800 48px sans-serif';
-        ctx.fillText(referrer.referralCode || 'N/A', 108, 448);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        ctx.fillRect(538, 342, 300, 136);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '600 28px sans-serif';
-        ctx.fillText('Total referrals', 574, 390);
-        ctx.font = '800 48px sans-serif';
-        ctx.fillText(String(referrer.referralCount || 0), 574, 448);
-
-        ctx.fillStyle = '#fef3c7';
-        ctx.fillRect(72, 532, 330, 10);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '600 26px sans-serif';
-        ctx.fillText('Bonus 50 MB untuk referrer dan pengguna baru', 72, 580);
-
-        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.end(canvas.toBuffer('image/png'));
+        res.send(svg);
     } catch (error) {
         res.status(500).send('Failed to generate referral banner.');
     }
@@ -173,7 +149,7 @@ router.get('/ref/:username', auth.checkAuthStatus, async (req, res) => {
         res.render('referral_landing', {
             referrer,
             referralRegisterUrl: `/register?ref=${encodeURIComponent(referrer.referralCode || '')}`,
-            referralBannerUrl: `/ref/${encodeURIComponent(referrer.username)}/banner.png`,
+            referralBannerUrl: `/ref/${encodeURIComponent(referrer.username)}/banner.svg`,
             originUrl: getRequestOrigin(req)
         });
     } catch (error) {
@@ -216,7 +192,7 @@ router.get('/dashboard/affiliate', auth.protectView, async (req, res) => {
         res.render('affiliate', {
             referrals,
             referralLandingUrl: `${getRequestOrigin(req)}/ref/${req.user.username}`,
-            referralBannerUrl: `/ref/${encodeURIComponent(req.user.username)}/banner.png`
+            referralBannerUrl: `/ref/${encodeURIComponent(req.user.username)}/banner.svg`
         });
     } catch (error) {
         res.status(500).send('Error loading affiliate dashboard.');

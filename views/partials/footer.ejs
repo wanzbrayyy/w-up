@@ -9,6 +9,7 @@
     const navMenu = document.getElementById('navMenu');
     const languageSwitcher = document.getElementById('languageSwitcher');
     const availableLanguages = <%- JSON.stringify(availableLanguages || []) %>;
+    const nativeFetch = window.fetch.bind(window);
 
     const translationState = {
         language: localStorage.getItem('ui-language') || 'original',
@@ -32,6 +33,29 @@
         icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
         themeBtn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
         themeBtn.setAttribute('title', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    }
+
+    function formatStorageGigabytes(bytes) {
+        return `${(Number(bytes || 0) / 1024 / 1024 / 1024).toFixed(2)} GB`;
+    }
+
+    async function refreshStorageUsage() {
+        const storageMeta = document.getElementById('storageMeta');
+        const storageFill = document.getElementById('storageFill');
+        const storagePercent = document.getElementById('storagePercent');
+        if (!storageMeta || !storageFill || !storagePercent) return;
+
+        try {
+            const response = await nativeFetch('/api/profile/storage');
+            if (!response.ok) return;
+            const data = await response.json();
+
+            storageFill.style.width = `${data.percentage || 0}%`;
+            storagePercent.textContent = `${Number(data.percentage || 0).toFixed(1)}%`;
+            storageMeta.textContent = `${formatStorageGigabytes(data.used)} / ${formatStorageGigabytes(data.total)}`;
+            storageMeta.dataset.storageUsed = data.used;
+            storageMeta.dataset.storageTotal = data.total;
+        } catch (error) {}
     }
 
     function normalizeText(text) {
@@ -263,6 +287,9 @@
 
     initializeTheme();
     initializeLanguageSwitcher();
+    refreshStorageUsage();
+
+    window.addEventListener('storage:refresh', refreshStorageUsage);
 
     async function translateUiString(message) {
         if (!message || translationState.language === 'original') return message;
@@ -288,7 +315,7 @@
 
     window.showToast = showToast;
 
-    const originalFetch = window.fetch;
+    const originalFetch = nativeFetch;
     window.fetch = async function (url, options = {}) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
@@ -300,7 +327,14 @@
                 options.headers['X-CSRF-Token'] = csrfToken;
             }
         }
-        return originalFetch(url, options);
+        const response = await originalFetch(url, options);
+
+        const requestUrl = typeof url === 'string' ? url : (url?.url || '');
+        if (response.ok && /\/api\/(upload|files\/.*(import|extract|convert)|trash\/empty|folder|files\/bulk)/.test(requestUrl)) {
+            setTimeout(() => window.dispatchEvent(new Event('storage:refresh')), 120);
+        }
+
+        return response;
     };
 
     const originalOpen = XMLHttpRequest.prototype.open;

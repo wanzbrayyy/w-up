@@ -314,6 +314,29 @@ router.get('/billing/history', auth.protectApi, async (req, res) => {
     }
 });
 
+router.get('/profile/storage', auth.protectApi, async (req, res) => {
+    try {
+        const stats = await File.aggregate([
+            { $match: { owner: req.user._id, deletedAt: null } },
+            { $group: { _id: null, totalSize: { $sum: '$size' } } }
+        ]);
+
+        const used = stats.length > 0 ? stats[0].totalSize : 0;
+        const total = (req.user.storageLimit || 0) + (req.user.storageBonus || 0);
+        const percentage = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+
+        await User.updateOne({ _id: req.user.id }, { $set: { storageUsed: used } });
+
+        res.json({
+            used,
+            total,
+            percentage
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to load storage usage.' });
+    }
+});
+
 router.post('/billing/checkout', auth.protectApi, async (req, res) => {
     try {
         if (!hasMidtransConfig()) {
