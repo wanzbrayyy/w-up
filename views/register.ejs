@@ -26,6 +26,14 @@
             </div>
 
             <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-shield-heart input-icon"></i>
+                    <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repeat your password" required minlength="6" autocomplete="new-password">
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label for="referralCode">Referral Code <span class="badge-optional">Optional</span></label>
                 <div class="input-wrapper">
                     <i class="fa-solid fa-gift input-icon"></i>
@@ -73,10 +81,26 @@
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
 
         const formData = {
-            username: e.target.username.value,
+            username: e.target.username.value.trim(),
             password: e.target.password.value,
             referralCode: e.target.referralCode.value
         };
+
+        if (formData.username.length < 3) {
+            errorBox.textContent = 'Username must be at least 3 characters.';
+            errorBox.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Sign Up</span> <i class="fa-solid fa-arrow-right"></i>';
+            return;
+        }
+
+        if (formData.password !== e.target.confirmPassword.value) {
+            errorBox.textContent = 'Password confirmation does not match.';
+            errorBox.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Sign Up</span> <i class="fa-solid fa-arrow-right"></i>';
+            return;
+        }
 
         try {
             const response = await fetch('/api/auth/register', {

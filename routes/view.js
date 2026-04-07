@@ -3,14 +3,22 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const { createCanvas } = require('canvas');
 const geoip = require('geoip-lite');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
 const LinkVisit = require('../models/linkVisit');
 const FileRequest = require('../models/fileRequest');
+const PaymentTransaction = require('../models/paymentTransaction');
 const auth = require('../middleware/auth');
 const { r2, GetObjectCommand, DeleteObjectCommand } = require('../utils/r2');
+const { getBillingPricing } = require('../utils/billing');
+const { getMidtransConfig, getSnapScriptUrl, hasMidtransConfig } = require('../utils/midtrans');
+
+function getRequestOrigin(req) {
+    return `${req.protocol}://${req.get('host')}`;
+}
 
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));
 
@@ -43,8 +51,17 @@ router.get('/logout', async (req, res) => {
 });
 
 router.get('/profile', auth.protectView, (req, res) => {
+    let currentDeviceId = '';
     const currentRefreshToken = req.cookies.refresh_token || '';
-    res.render('profile', { currentRefreshToken });
+
+    if (currentRefreshToken) {
+        try {
+            const decoded = jwt.verify(currentRefreshToken, process.env.JWT_SECRET);
+            currentDeviceId = decoded.deviceId || '';
+        } catch (e) {}
+    }
+
+    res.render('profile', { currentDeviceId });
 });
 
 router.get('/docs', auth.checkAuthStatus, (req, res) => {
@@ -62,9 +79,98 @@ router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
             deletedAt: null, 
             isFolder: false 
         }).sort({ createdAt: -1 }).select('-base64 -password');
+
+        const publicStats = {
+            totalFiles: files.length,
+            totalDownloads: files.reduce((sum, item) => sum + (item.downloads || 0), 0),
+            totalSize: files.reduce((sum, item) => sum + (item.size || 0), 0)
+        };
         
-        res.render('public_profile', { targetUser, files });
+        res.render('public_profile', { targetUser, files, publicStats });
     } catch (e) { res.status(500).render('404'); }
+});
+
+router.get('/ref/:username/banner.png', auth.checkAuthStatus, async (req, res) => {
+    try {
+        const referrer = await User.findOne({ username: req.params.username }).select('username referralCode referralCount branding');
+        if (!referrer) return res.status(404).send('Referral banner not found.');
+
+        const width = 1200;
+        const height = 630;
+        const primary = referrer.branding?.primaryColor || '#1d4ed8';
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#081226');
+        gradient.addColorStop(0.55, primary);
+        gradient.addColorStop(1, '#f97316');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        ctx.beginPath();
+        ctx.arc(980, 120, 150, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(180, 520, 220, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 34px sans-serif';
+        ctx.fillText('w upload referral', 72, 88);
+
+        ctx.font = '800 74px sans-serif';
+        ctx.fillText(`Gabung lewat @${referrer.username}`, 72, 210);
+
+        ctx.font = '500 34px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.fillText('Dapat bonus storage dan akses workspace yang lebih rapi.', 72, 278);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.fillRect(72, 342, 420, 136);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 28px sans-serif';
+        ctx.fillText('Referral code', 108, 390);
+        ctx.font = '800 48px sans-serif';
+        ctx.fillText(referrer.referralCode || 'N/A', 108, 448);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(538, 342, 300, 136);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 28px sans-serif';
+        ctx.fillText('Total referrals', 574, 390);
+        ctx.font = '800 48px sans-serif';
+        ctx.fillText(String(referrer.referralCount || 0), 574, 448);
+
+        ctx.fillStyle = '#fef3c7';
+        ctx.fillRect(72, 532, 330, 10);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 26px sans-serif';
+        ctx.fillText('Bonus 50 MB untuk referrer dan pengguna baru', 72, 580);
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        res.end(canvas.toBuffer('image/png'));
+    } catch (error) {
+        res.status(500).send('Failed to generate referral banner.');
+    }
+});
+
+router.get('/ref/:username', auth.checkAuthStatus, async (req, res) => {
+    try {
+        const referrer = await User.findOne({ username: req.params.username }).select('username referralCode referralCount publicBio branding plan');
+        if (!referrer) return res.status(404).render('404');
+
+        res.render('referral_landing', {
+            referrer,
+            referralRegisterUrl: `/register?ref=${encodeURIComponent(referrer.referralCode || '')}`,
+            referralBannerUrl: `/ref/${encodeURIComponent(referrer.username)}/banner.png`,
+            originUrl: getRequestOrigin(req)
+        });
+    } catch (error) {
+        res.status(500).render('404');
+    }
 });
 
 router.get('/req/:slug', auth.checkAuthStatus, async (req, res) => {
@@ -97,16 +203,47 @@ router.get('/dashboard/teams/:id', auth.protectView, async (req, res) => {
 });
 
 router.get('/dashboard/affiliate', auth.protectView, async (req, res) => {
-    const referrals = await User.find({ referredBy: req.user.id }).select('username createdAt isVerified plan');
-    res.render('affiliate', { referrals });
+    try {
+        const referrals = await User.find({ referredBy: req.user.id }).select('username createdAt isVerified plan');
+        res.render('affiliate', {
+            referrals,
+            referralLandingUrl: `${getRequestOrigin(req)}/ref/${req.user.username}`,
+            referralBannerUrl: `/ref/${encodeURIComponent(req.user.username)}/banner.png`
+        });
+    } catch (error) {
+        res.status(500).send('Error loading affiliate dashboard.');
+    }
+});
+
+router.get('/billing', auth.protectView, async (req, res) => {
+    try {
+        const { monthlyPrice, yearlyPrice } = getBillingPricing();
+        const currentPlan = req.user.plan || 'free';
+        const recentTransactions = await PaymentTransaction.find({ user: req.user.id })
+            .sort({ createdAt: -1 })
+            .limit(8)
+            .select('orderId amount billingCycle status paymentMethod createdAt paidAt completedAt');
+        const midtransConfig = getMidtransConfig();
+
+        res.render('billing', {
+            currentPlan,
+            monthlyPrice,
+            yearlyPrice,
+            currentExpiry: req.user.subscriptionExpiresAt,
+            recentTransactions,
+            midtransEnabled: hasMidtransConfig(),
+            midtransClientKey: midtransConfig.clientKey,
+            midtransScriptUrl: getSnapScriptUrl()
+        });
+    } catch (error) {
+        res.status(500).send('Error loading billing page.');
+    }
 });
 
 router.post('/billing/upgrade', auth.protectView, async (req, res) => {
-    req.user.plan = 'pro';
-    req.user.storageLimit = 50 * 1024 * 1024 * 1024;
-    req.user.subscriptionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); 
-    await req.user.save();
-    res.json({ message: 'Upgraded to PRO successfully!' });
+    res.status(410).json({
+        message: 'Demo upgrade route has been retired. Use the real Midtrans checkout flow from /billing.'
+    });
 });
 
 router.get('/dashboard', auth.protectView, async (req, res) => {
@@ -184,7 +321,21 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
         req.user.storageUsed = currentUsage;
         await req.user.save();
 
-        res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs });
+        const [ownedFiles, ownedFolders, sharedItems] = await Promise.all([
+            File.countDocuments({ owner: req.user.id, deletedAt: null, isFolder: false }),
+            File.countDocuments({ owner: req.user.id, deletedAt: null, isFolder: true }),
+            File.countDocuments({ 'collaborators.user': req.user.id, deletedAt: null })
+        ]);
+
+        const dashboardStats = {
+            ownedFiles,
+            ownedFolders,
+            sharedItems,
+            totalDownloads: files.reduce((sum, item) => sum + (item.downloads || 0), 0),
+            currentUsage
+        };
+
+        res.render('dashboard', { files, query: req.query, currentFolder, breadcrumbs, dashboardStats });
     } catch (error) {
         console.error(error);
         res.status(500).send("Error fetching user files.");

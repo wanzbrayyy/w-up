@@ -15,17 +15,22 @@ const origin = process.env.APP_URL;
 
 const passkeyConfig = { rpID, rpName, origin };
 
+function toWebAuthnUserId(user) {
+    return Buffer.from(user._id.toString(), 'utf8');
+}
+
 async function generatePasskeyRegistrationOptions(user) {
     try {
         const existingCredentials = user.passkeys.map(key => ({
             id: Buffer.from(key.credentialID).toString('base64url'),
+            type: 'public-key',
             transports: key.transports,
         }));
 
         const options = await generateRegistrationOptions({
             rpName: passkeyConfig.rpName,
             rpID: passkeyConfig.rpID,
-            userID: Buffer.from(user._id.toString(), 'utf8').toString('base64url'),
+            userID: toWebAuthnUserId(user),
             userName: user.username,
             userDisplayName: user.username,
             attestationType: 'none',

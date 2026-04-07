@@ -1,101 +1,114 @@
 <%- include('partials/header', { title: file.originalName, pageCss: 'viewer' }) %>
 
 <style>
-    body {
-        background: var(--bg);
+    .archive-shell {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 1.75rem 1.25rem 3rem;
     }
-    .viewer-container {
-        max-width: 900px;
-        margin: 2rem auto;
-        padding: 0 1.5rem;
+    .archive-hero {
+        padding: 1.8rem;
+        border-radius: 30px;
+        background:
+            radial-gradient(circle at top right, rgba(249,115,22,0.16), transparent 24%),
+            linear-gradient(135deg, rgba(15,23,42,0.96), rgba(37,99,235,0.9));
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.16);
+        box-shadow: 0 28px 56px rgba(15, 23, 42, 0.18);
     }
-    .archive-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 1rem;
-        text-align: center;
-        padding: 3rem 2rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    .archive-badge {
+        display: inline-flex;
+        padding: 0.35rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
     }
-    .archive-icon {
-        font-size: 4rem;
-        color: var(--primary);
-        margin-bottom: 1.5rem;
+    .archive-hero h1 {
+        margin: 0.9rem 0 0.7rem;
+        font-size: clamp(2rem, 3vw, 2.7rem);
+        line-height: 1.1;
+        word-break: break-word;
     }
-    .archive-card h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        margin: 0 0 0.5rem 0;
-        color: var(--text);
-    }
-    .archive-card p {
-        color: var(--muted-text);
-        font-size: 1.1rem;
-        margin: 0 0 2.5rem 0;
+    .archive-hero p {
+        margin: 0;
+        color: rgba(255,255,255,0.78);
+        line-height: 1.75;
+        max-width: 720px;
     }
     .archive-actions {
         display: flex;
-        justify-content: center;
-        gap: 1rem;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+        margin-top: 1.35rem;
+    }
+    .archive-panel {
+        margin-top: 1.4rem;
+        padding: 1.35rem;
+        border-radius: 24px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 38px rgba(15, 23, 42, 0.06);
     }
     #status {
-        margin-top: 1.5rem;
-        font-weight: 500;
+        margin-top: 1rem;
+        font-weight: 600;
         color: var(--muted-text);
     }
-    #status.success { color: var(--success); }
-    #status.error { color: var(--danger); }
-    
+    #status.success { color: #15803d; }
+    #status.error { color: #b91c1c; }
     #extracted-files-container {
-        margin-top: 2rem;
-        text-align: left;
+        margin-top: 1.25rem;
         border-top: 1px solid var(--border);
-        padding-top: 1.5rem;
+        padding-top: 1.25rem;
     }
     #extracted-files-list {
         list-style: none;
         padding: 0;
         margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+        display: grid;
+        gap: 0.75rem;
     }
     #extracted-files-list li {
         background: var(--bg-secondary);
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
+        padding: 0.85rem 1rem;
+        border-radius: 14px;
         border: 1px solid var(--border);
     }
     #extracted-files-list a {
         color: var(--primary);
         text-decoration: none;
-        font-weight: 500;
+        font-weight: 600;
     }
 </style>
 
-<main class="viewer-container">
-    <div class="archive-card">
-        <div class="archive-icon">
-            <i class="fa-solid fa-file-zipper"></i>
-        </div>
+<main class="archive-shell">
+    <section class="archive-hero">
+        <span class="archive-badge">Archive Toolkit</span>
         <h1><%= file.originalName %></h1>
-        <p>This is a compressed archive file.</p>
-        
+        <p>Halaman arsip sekarang fokus ke dua aksi penting: ekstrak isi ZIP agar langsung bisa dipakai, atau unduh arsip aslinya bila ingin menyimpannya utuh.</p>
+
         <div class="archive-actions">
-            <button id="extractBtn" class="btn primary-btn" style="padding: 0.75rem 2rem;">
+            <button id="extractBtn" class="btn primary-btn" style="padding: 0.85rem 1.4rem;">
                 <i class="fa-solid fa-box-open"></i> Extract Files
             </button>
-            <a href="<%= downloadLink %>" class="btn secondary-btn" style="padding: 0.75rem 2rem;">
+            <a href="<%= downloadLink %>" class="btn secondary-btn" style="padding: 0.85rem 1.4rem;">
                 <i class="fa-solid fa-download"></i> Download Archive
             </a>
         </div>
+    </section>
 
+    <section class="archive-panel">
+        <h3 style="margin-top:0;">Status extraction</h3>
+        <p style="color:var(--muted-text); margin-top:0;">Jika Anda login, hasil ekstraksi akan langsung masuk ke dashboard. Jika tamu, file hasil ekstraksi akan ditampilkan di sini.</p>
         <div id="status"></div>
         <div id="extracted-files-container" style="display:none;">
-            <h3>Extracted Files:</h3>
+            <h3>Extracted Files</h3>
             <ul id="extracted-files-list"></ul>
         </div>
-    </div>
+    </section>
 </main>
 
 <script>
@@ -106,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const filesList = document.getElementById('extracted-files-list');
 
     extractBtn.addEventListener('click', async () => {
-        statusDiv.textContent = 'Extracting, please wait...';
+        statusDiv.textContent = 'Extracting archive, please wait...';
         statusDiv.className = '';
         filesContainer.style.display = 'none';
         extractBtn.disabled = true;
@@ -116,22 +129,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/files/<%= file._id %>/extract', {
                 method: 'POST'
             });
-            
             const data = await res.json();
 
             if (res.ok) {
-                // Kasus jika pengguna LOGIN
                 if (data.folder) {
-                    statusDiv.textContent = `Success! Extracted to folder: ${data.folder.originalName}. Redirecting...`;
+                    statusDiv.textContent = `Success! Arsip diekstrak ke folder ${data.folder.originalName}.`;
                     statusDiv.className = 'success';
                     showToast('Archive extracted!', 'success');
                     setTimeout(() => {
                         window.location.href = `/dashboard?folderId=${data.folder._id}`;
-                    }, 2000);
-                } 
-                // Kasus jika pengguna TAMU
-                else if (data.files) {
-                    statusDiv.textContent = 'Extraction successful! Here are your files:';
+                    }, 1800);
+                } else if (data.files) {
+                    statusDiv.textContent = 'Extraction successful. File hasil ekstraksi tersedia di bawah ini.';
                     statusDiv.className = 'success';
                     filesList.innerHTML = '';
                     data.files.forEach(file => {
@@ -140,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         filesList.appendChild(li);
                     });
                     filesContainer.style.display = 'block';
-                    extractBtn.style.display = 'none'; // Sembunyikan tombol setelah berhasil
+                    extractBtn.style.display = 'none';
                 }
             } else {
                 statusDiv.textContent = `Error: ${data.message}`;

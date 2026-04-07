@@ -90,6 +90,56 @@
             </div>
         </section>
 
+        <section class="dashboard-hero">
+            <div class="dashboard-hero-copy">
+                <span class="dashboard-hero-badge">Workspace Overview</span>
+                <h2><%= currentFolder ? currentFolder.originalName : 'Semua file Anda' %> sekarang tampil dengan kontrol yang lebih cepat dan lebih rapi.</h2>
+                <p>Upload, ekstrak arsip, cari file, dan kelola ruang kerja dari satu dashboard yang lebih fokus ke aksi penting.</p>
+            </div>
+            <div class="dashboard-hero-stats">
+                <article class="hero-stat-card">
+                    <small>Owned files</small>
+                    <strong><%= dashboardStats ? dashboardStats.ownedFiles : files.length %></strong>
+                </article>
+                <article class="hero-stat-card">
+                    <small>Folders</small>
+                    <strong><%= dashboardStats ? dashboardStats.ownedFolders : 0 %></strong>
+                </article>
+                <article class="hero-stat-card">
+                    <small>Shared items</small>
+                    <strong><%= dashboardStats ? dashboardStats.sharedItems : 0 %></strong>
+                </article>
+                <article class="hero-stat-card">
+                    <small>Storage used</small>
+                    <strong><%= dashboardStats ? (dashboardStats.currentUsage / 1024 / 1024 / 1024).toFixed(2) : '0.00' %> GB</strong>
+                </article>
+            </div>
+        </section>
+
+        <section class="dashboard-quick-grid">
+            <button class="quick-card" type="button" id="quickUploadBtn">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                <div>
+                    <strong>Upload cepat</strong>
+                    <small>Tarik file atau pilih dari perangkat.</small>
+                </div>
+            </button>
+            <button class="quick-card" type="button" id="quickFolderBtn">
+                <i class="fa-solid fa-folder-plus"></i>
+                <div>
+                    <strong>Buat folder</strong>
+                    <small>Rapikan struktur kerja Anda lebih cepat.</small>
+                </div>
+            </button>
+            <button class="quick-card" type="button" id="quickRequestBtn">
+                <i class="fa-solid fa-file-import"></i>
+                <div>
+                    <strong>File request</strong>
+                    <small>Buat link untuk menerima file dari orang lain.</small>
+                </div>
+            </button>
+        </section>
+
         <% if (breadcrumbs && breadcrumbs.length > 0) { %>
             <div class="breadcrumbs">
                 <a href="/dashboard"><i class="fa-solid fa-home"></i></a>
@@ -196,6 +246,84 @@
 <input type="file" id="fileInput" multiple hidden>
 
 <style>
+    .dashboard-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+        gap: 1.4rem;
+        margin-bottom: 1rem;
+        padding: 1.55rem;
+        border-radius: 26px;
+        background:
+            radial-gradient(circle at top right, rgba(249,115,22,0.14), transparent 24%),
+            linear-gradient(135deg, rgba(15,23,42,0.96), rgba(37,99,235,0.9));
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.14);
+    }
+    .dashboard-hero-badge {
+        display: inline-flex;
+        padding: 0.35rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    .dashboard-hero h2 { margin: 0.8rem 0 0.7rem; font-size: clamp(1.7rem, 2.8vw, 2.35rem); line-height: 1.15; }
+    .dashboard-hero p { margin: 0; color: rgba(255,255,255,0.76); line-height: 1.72; max-width: 740px; }
+    .dashboard-hero-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.9rem;
+    }
+    .hero-stat-card {
+        padding: 1rem;
+        border-radius: 20px;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.16);
+    }
+    .hero-stat-card small {
+        display: block;
+        color: rgba(255,255,255,0.7);
+        margin-bottom: 0.25rem;
+    }
+    .hero-stat-card strong { font-size: 1.25rem; }
+    .dashboard-quick-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .quick-card {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem 1.05rem;
+        border-radius: 22px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        text-align: left;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .quick-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(37,99,235,0.35);
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+    }
+    .quick-card i {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(37,99,235,0.10);
+        color: #2563eb;
+        font-size: 1.2rem;
+    }
+    .quick-card strong { display: block; color: var(--text); }
+    .quick-card small { color: var(--muted-text); }
     .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
     .tab-btn { background: none; border: none; padding: 0.75rem 1rem; cursor: pointer; color: var(--muted-text); border-bottom: 2px solid transparent; font-weight: 600; font-size: 0.9rem; }
     .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
@@ -204,6 +332,9 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     #analyticsList { list-style-type: none; padding: 0; font-size: 0.9rem; color: var(--muted-text); margin-top: 1.5rem; }
     #analyticsList li { margin-bottom: 0.5rem; }
+    @media (max-width: 980px) {
+        .dashboard-hero, .dashboard-quick-grid { grid-template-columns: 1fr; }
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -221,6 +352,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if(sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
     if(closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
     if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
+
+    document.getElementById('quickUploadBtn')?.addEventListener('click', () => document.getElementById('uploadBtn').click());
+    document.getElementById('quickFolderBtn')?.addEventListener('click', () => document.getElementById('newFolderBtn').click());
+    document.getElementById('quickRequestBtn')?.addEventListener('click', () => document.getElementById('fileRequestBtn').click());
 
     document.getElementById('uploadBtn').addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => handleUpload(e.target.files));

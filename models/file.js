@@ -6,7 +6,7 @@ const CollaboratorSchema = new mongoose.Schema({
 }, { _id: false });
 
 const ShareLinkSchema = new mongoose.Schema({
-  linkId: { type: String, required: true, unique: true },
+  linkId: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
   password: { type: String },
   expiresAt: { type: Date }

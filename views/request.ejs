@@ -49,6 +49,52 @@
                         </select>
                     </div>
                 </div>
+
+                <div class="form-group form-group-full">
+                    <label for="template">
+                        <i class="fa-solid fa-layer-group form-icon"></i>
+                        Popular Template <span class="badge-optional">Optional</span>
+                    </label>
+                    <div class="select-wrapper">
+                        <select id="template" name="template" class="form-input">
+                            <option value="">-- No template, custom request --</option>
+                            <option value="Like we nano banana">Like we nano banana</option>
+                            <option value="Veo 3">Veo 3</option>
+                            <option value="Manga api">Manga api</option>
+                            <option value="Rpg games one">Rpg games one</option>
+                            <option value="Ytdl">Ytdl</option>
+                            <option value="Pinterest search">Pinterest search</option>
+                        </select>
+                    </div>
+                    <small class="form-hint">Choose one of the ready-made ideas below if you want us to start from a known concept.</small>
+                </div>
+            </div>
+
+            <div class="preset-grid">
+                <button type="button" class="preset-card" data-template="Like we nano banana" data-type="website">
+                    <strong>Like we nano banana</strong>
+                    <span>Preset for a playful consumer-style web product flow.</span>
+                </button>
+                <button type="button" class="preset-card" data-template="Veo 3" data-type="website">
+                    <strong>Veo 3</strong>
+                    <span>Preset for AI video generation style tools and landing pages.</span>
+                </button>
+                <button type="button" class="preset-card" data-template="Manga api" data-type="scraper">
+                    <strong>Manga api</strong>
+                    <span>Preset for manga data, feed, and API integration requests.</span>
+                </button>
+                <button type="button" class="preset-card" data-template="Rpg games one" data-type="website">
+                    <strong>Rpg games one</strong>
+                    <span>Preset for RPG game portals, dashboards, or companion sites.</span>
+                </button>
+                <button type="button" class="preset-card" data-template="Ytdl" data-type="bot">
+                    <strong>Ytdl</strong>
+                    <span>Preset for downloader, media utility, or bot workflow requests.</span>
+                </button>
+                <button type="button" class="preset-card" data-template="Pinterest search" data-type="scraper">
+                    <strong>Pinterest search</strong>
+                    <span>Preset for Pinterest search, scraping, or media discovery flows.</span>
+                </button>
             </div>
 
             <div id="scraper-fields" class="conditional-fields">
@@ -235,6 +281,45 @@
         color: var(--muted-text);
         margin-top: 0.5rem;
     }
+    .badge-optional {
+        font-size: 0.72rem;
+        background: var(--bg-secondary);
+        color: var(--muted-text);
+        padding: 2px 6px;
+        border-radius: 999px;
+    }
+    .preset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+    }
+    .preset-card {
+        text-align: left;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 0.85rem;
+        background: linear-gradient(180deg, var(--card) 0%, var(--bg-secondary) 100%);
+        color: var(--text);
+        cursor: pointer;
+        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    .preset-card strong {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.98rem;
+    }
+    .preset-card span {
+        display: block;
+        color: var(--muted-text);
+        font-size: 0.86rem;
+        line-height: 1.5;
+    }
+    .preset-card:hover,
+    .preset-card.active {
+        border-color: var(--primary);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+    }
     .conditional-fields {
         display: none;
         animation: slideDown 0.4s ease-out;
@@ -307,8 +392,10 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const requestTypeSelect = document.getElementById('requestType');
+        const templateSelect = document.getElementById('template');
         const allConditionalFields = document.querySelectorAll('.conditional-fields');
         const allTextareas = document.querySelectorAll('textarea[minlength]');
+        const presetCards = document.querySelectorAll('.preset-card');
 
         function toggleFields() {
             const selectedValue = requestTypeSelect.value;
@@ -335,7 +422,23 @@
             }
         }
 
+        function updateActivePreset() {
+            presetCards.forEach(card => {
+                card.classList.toggle('active', card.dataset.template === templateSelect.value);
+            });
+        }
+
         requestTypeSelect.addEventListener('change', toggleFields);
+        templateSelect.addEventListener('change', updateActivePreset);
+
+        presetCards.forEach(card => {
+            card.addEventListener('click', () => {
+                templateSelect.value = card.dataset.template;
+                requestTypeSelect.value = card.dataset.type;
+                updateActivePreset();
+                toggleFields();
+            });
+        });
         
         allTextareas.forEach(textarea => {
             const minLength = parseInt(textarea.getAttribute('minlength'), 10);
@@ -350,6 +453,7 @@
         });
 
         toggleFields();
+        updateActivePreset();
     });
 </script>
 

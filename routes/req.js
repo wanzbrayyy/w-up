@@ -9,7 +9,8 @@ router.get('/', auth.checkAuthStatus, (req, res) => {
 
 router.post('/', async (req, res) => {
     try {
-        const { requestType, contactEmail, url, description, botType } = req.body;
+        const { requestType, contactEmail, url, description, botType, template } = req.body;
+        const safeTemplate = typeof template === 'string' ? template.trim().slice(0, 100) : '';
 
         if (!requestType || !contactEmail) {
             return res.redirect('/request?status=error&message=Request type and email are required.');
@@ -17,8 +18,10 @@ router.post('/', async (req, res) => {
 
         const newRequestData = {
             requestType,
-            contactEmail,
-            details: {}
+            contactEmail: contactEmail.trim(),
+            details: {
+                template: safeTemplate || undefined
+            }
         };
 
         if (requestType === 'scraper') {

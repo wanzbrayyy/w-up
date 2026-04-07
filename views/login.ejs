@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const respOptions = await fetch('/api/auth/passkey/login-options', { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: usernameInput.value })
+                body: JSON.stringify({ username: usernameInput.value.trim() })
             });
 
             if (!respOptions.ok) throw new Error('Could not get passkey options.');
@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         errorBox.style.display = 'none';
 
-        const username = e.target.username.value;
+        const username = e.target.username.value.trim();
         const password = e.target.password.value;
 
         try {
@@ -104,7 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (response.ok) {
-                if (data.status === '2fa_required') {
+                if (data.status === 'password_expired') {
+                    handleError(data.message);
+                } else if (data.status === '2fa_required') {
                     const code = prompt('Enter your 2FA code:');
                     if (code) {
                         const twoFaResponse = await fetch('/api/auth/login/2fa', {

@@ -13,7 +13,8 @@ const PublicRequestSchema = new mongoose.Schema({
     details: {
         url: String,
         description: String,
-        botType: String
+        botType: String,
+        template: String
     },
     status: {
         type: String,

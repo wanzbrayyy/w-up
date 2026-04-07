@@ -2,7 +2,15 @@
     const owner = file.owner;
     const branding = (owner && owner.plan === 'pro' && owner.branding) ? owner.branding : {};
     const pageTitle = branding.pageTitle || `Download ${file.originalName}`;
-    const primaryColor = branding.primaryColor || '#4F46E5';
+    const primaryColor = branding.primaryColor || '#2563eb';
+    const lowerName = String(file.originalName || '').toLowerCase();
+    const isImage = !file.isFolder && file.contentType.startsWith('image/');
+    const isVideo = !file.isFolder && file.contentType.startsWith('video/');
+    const isAudio = !file.isFolder && file.contentType.startsWith('audio/');
+    const isPdf = !file.isFolder && (file.contentType.includes('pdf') || lowerName.endsWith('.pdf'));
+    const isTextish = !file.isFolder && (file.contentType.includes('text') || /\.(txt|md|doc|docx|json|xml|csv)$/i.test(lowerName));
+    const canShowQr = !isVideo;
+    const canScan = !file.isFolder && !isVideo && !isAudio;
 %>
 
 <%- include('partials/header', { title: pageTitle, pageCss: 'download' }) %>
@@ -11,125 +19,385 @@
     :root {
         --branded-primary: <%= primaryColor %>;
     }
-    .btn-download { background: var(--branded-primary); }
-    .action-btn.secondary:hover { border-color: var(--branded-primary); color: var(--branded-primary); }
-    #timer { color: var(--branded-primary); }
-    .comment-list .mention { color: var(--branded-primary); font-weight: 600; text-decoration: none; }
+    .download-shell {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 1.5rem 1.25rem 3rem;
+    }
+    .download-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.9fr);
+        gap: 1.5rem;
+        padding: 1.7rem;
+        border-radius: 30px;
+        background:
+            radial-gradient(circle at top right, rgba(249,115,22,0.14), transparent 24%),
+            linear-gradient(135deg, rgba(15,23,42,0.96), var(--branded-primary));
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.16);
+        box-shadow: 0 30px 60px rgba(15, 23, 42, 0.18);
+        margin-bottom: 1.4rem;
+    }
+    .hero-badge {
+        display: inline-flex;
+        padding: 0.35rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    .download-hero h1 { margin: 0.9rem 0 0.75rem; font-size: clamp(2rem, 3vw, 2.8rem); line-height: 1.1; word-break: break-word; }
+    .download-hero p { margin: 0; color: rgba(255,255,255,0.78); line-height: 1.75; max-width: 720px; }
+    .download-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1.35rem;
+    }
+    .metric-card {
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.16);
+    }
+    .metric-card small { display: block; color: rgba(255,255,255,0.72); margin-bottom: 0.25rem; }
+    .metric-card strong { font-size: 1.1rem; }
+    .download-side-card {
+        padding: 1.25rem;
+        border-radius: 24px;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.16);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        justify-content: space-between;
+    }
+    .type-pill {
+        display: inline-flex;
+        width: fit-content;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.14);
+        font-weight: 700;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .download-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+        gap: 1.5rem;
+    }
+    .surface-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 1.35rem;
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+    }
+    .preview-surface {
+        min-height: 260px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 22px;
+        background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(249,115,22,0.08));
+        border: 1px solid var(--border);
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .preview-surface img,
+    .preview-surface video {
+        width: 100%;
+        max-height: 520px;
+        object-fit: contain;
+        display: block;
+        background: #000;
+    }
+    .preview-surface audio {
+        width: calc(100% - 2rem);
+    }
+    .preview-placeholder {
+        text-align: center;
+        padding: 2rem;
+        color: var(--muted-text);
+    }
+    .preview-placeholder i {
+        display: block;
+        font-size: 2.4rem;
+        color: var(--branded-primary);
+        margin-bottom: 0.75rem;
+    }
+    .download-btn {
+        width: 100%;
+        justify-content: center;
+        background: linear-gradient(135deg, var(--branded-primary), #f97316);
+        border: none;
+    }
+    .download-btn.disabled { opacity: 0.7; pointer-events: none; }
+    .countdown-box, .hash-box, .share-strip, .note-strip {
+        padding: 1rem;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+    .action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 0.9rem;
+        margin-top: 1rem;
+    }
+    .action-btn {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--card);
+        padding: 0.95rem;
+        cursor: pointer;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+    }
+    .action-btn:hover { border-color: var(--branded-primary); color: var(--branded-primary); }
+    .file-details-list { display: grid; gap: 0.85rem; }
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.9rem 0;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted-text);
+    }
+    .detail-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .detail-row strong { color: var(--text); text-align: right; }
+    .share-strip {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    .share-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--card);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text);
+        text-decoration: none;
+    }
+    .reactions {
+        display: flex;
+        gap: 0.85rem;
+        margin-top: 1rem;
+    }
+    .react-btn {
+        border: 1px solid var(--border);
+        background: var(--card);
+        border-radius: 999px;
+        padding: 0.7rem 1rem;
+        cursor: pointer;
+        color: var(--text);
+    }
+    .comments-section { margin-top: 1.5rem; }
+    .comments-section h3 { margin-top: 0; }
+    .comment-list { display: grid; gap: 0.85rem; }
+    .comment {
+        padding: 1rem;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+    .comment strong { display: block; margin-bottom: 0.35rem; }
+    .comment p { margin: 0 0 0.35rem; line-height: 1.7; }
+    .comment small { color: var(--muted-text); }
+    .comment-list .mention { color: var(--branded-primary); font-weight: 700; text-decoration: none; }
+    .report-link {
+        background: transparent;
+        border: none;
+        color: var(--muted-text);
+        cursor: pointer;
+        padding: 0;
+    }
+    #timer { color: var(--branded-primary); font-weight: 700; }
+    .alert-box.warning { border-left-color: #f97316; }
+    @media (max-width: 980px) {
+        .download-hero, .download-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+        .download-shell { padding: 1rem; }
+        .download-metrics { grid-template-columns: 1fr; }
+    }
 </style>
 
-<main class="download-page-container">
-    <div class="download-card">
-        <% if (branding.logoUrl) { %>
-            <img src="<%= branding.logoUrl %>" alt="Logo" style="max-height: 50px; margin-bottom: 1.5rem;">
-        <% } else { %>
-            <div class="file-icon-wrapper">
-                <% if (file.isFolder) { %>
-                    <i class="fa-solid fa-folder-open file-icon" style="color: #fbbf24;"></i>
-                <% } else if (file.contentType.startsWith('image/')) { %>
-                    <i class="fa-solid fa-image file-icon"></i>
-                <% } else if (file.contentType.startsWith('video/')) { %>
-                    <i class="fa-solid fa-video file-icon"></i>
-                <% } else if (file.contentType.startsWith('audio/')) { %>
-                    <i class="fa-solid fa-music file-icon"></i>
-                <% } else if (file.contentType.includes('zip') || file.contentType.includes('archive')) { %>
-                    <i class="fa-solid fa-file-zipper file-icon"></i>
+<main class="download-shell">
+    <section class="download-hero">
+        <div>
+            <span class="hero-badge">Secure File Delivery</span>
+            <h1><%= file.originalName %></h1>
+            <p>
+                <% if (isVideo) { %>
+                    File video ini bisa dipreview langsung sebelum diunduh, dengan tombol aksi yang disederhanakan agar fokus ke playback dan download.
+                <% } else if (isImage) { %>
+                    File gambar ini tampil dengan preview besar, detail hash, dan aksi lanjutan yang relevan untuk file visual.
+                <% } else if (isAudio) { %>
+                    File audio ini bisa diputar dulu sebelum diunduh.
                 <% } else { %>
-                    <i class="fa-solid fa-file-arrow-down file-icon"></i>
+                    File ini siap diunduh dengan tampilan yang lebih rapi, metadata jelas, dan aksi yang hanya muncul kalau memang relevan.
                 <% } %>
+            </p>
+
+            <div class="download-metrics">
+                <div class="metric-card">
+                    <small>Ukuran</small>
+                    <strong><%= file.isFolder ? 'Folder' : `${(file.size / 1024 / 1024).toFixed(2)} MB` %></strong>
+                </div>
+                <div class="metric-card">
+                    <small>Views</small>
+                    <strong><%= totalViews %></strong>
+                </div>
+                <div class="metric-card">
+                    <small>Downloads</small>
+                    <strong><%= file.downloads %></strong>
+                </div>
             </div>
-        <% } %>
-        
-        <h1 class="filename"><%= file.originalName %></h1>
-        <div class="file-meta">
-            <% if (file.isFolder) { %>
-                <span>Folder Archive</span> &bull; 
-            <% } else { %>
-                <span><%= (file.size / 1024 / 1024).toFixed(2) %> MB</span> &bull; 
-            <% } %>
-            <span><i class="fa-solid fa-eye"></i> <%= totalViews %> Views</span> &bull;
-            <span><i class="fa-solid fa-download"></i> <%= file.downloads %> Downloads</span>
         </div>
 
-        <div id="virusStatus" style="margin-bottom: 1rem; display: none;"></div>
+        <div class="download-side-card">
+            <div>
+                <span class="type-pill">
+                    <%= isImage ? 'Image' : isVideo ? 'Video' : isAudio ? 'Audio' : isPdf ? 'PDF' : isTextish ? 'Document' : 'File' %>
+                </span>
+                <div style="margin-top:1rem;">
+                    <% if (branding.logoUrl) { %>
+                        <img src="<%= branding.logoUrl %>" alt="Logo" style="max-height: 54px; display:block; margin-bottom: 0.8rem;">
+                    <% } %>
+                    <small style="display:block; color: rgba(255,255,255,0.7); margin-bottom:0.3rem;">Uploaded by</small>
+                    <strong style="font-size:1.4rem;"><%= owner?.username || 'Unknown' %></strong>
+                </div>
+            </div>
+            <div class="note-strip" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); color: rgba(255,255,255,0.78);">
+                Aksi seperti QR dan scan otomatis disembunyikan untuk video agar tampilan tetap bersih dan relevan.
+            </div>
+        </div>
+    </section>
 
-        <div class="preview-area">
-            <% if (!file.isFolder) { %>
-                <% if (file.contentType.startsWith('image/')) { %>
-                    <img src="<%= downloadLink %>" alt="Preview" class="preview-content">
-                <% } else if (file.contentType.startsWith('video/')) { %>
-                    <video controls class="preview-content">
+    <div class="download-grid">
+        <section class="surface-card">
+            <div class="preview-surface">
+                <% if (isImage) { %>
+                    <img src="<%= downloadLink %>" alt="Preview">
+                <% } else if (isVideo) { %>
+                    <video controls>
                         <source src="<%= downloadLink %>" type="<%= file.contentType %>">
                     </video>
-                <% } else if (file.contentType.startsWith('audio/')) { %>
-                    <audio controls class="preview-content">
+                <% } else if (isAudio) { %>
+                    <audio controls>
                         <source src="<%= downloadLink %>" type="<%= file.contentType %>">
                     </audio>
-                <% } %>
-            <% } %>
-        </div>
-
-        <% if (file.isBurnAfterRead) { %>
-            <div class="alert-box warning"><i class="fa-solid fa-fire"></i> This file will self-destruct after you download it!</div>
-        <% } %>
-
-        <% if (!locals.user || locals.user.plan === 'free') { %>
-            <div id="countdownContainer">
-                <p>Your download will start in <span id="timer">10</span> seconds...</p>
-            </div>
-            <a href="<%= downloadLink %>" class="btn-download disabled" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
-                <i class="fa-solid fa-spinner fa-spin"></i> Please Wait...
-            </a>
-        <% } else { %>
-            <a href="<%= downloadLink %>" class="btn-download" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
-                <% if (file.isFolder) { %>
-                    <i class="fa-solid fa-file-zipper"></i> Download Folder as ZIP
                 <% } else { %>
-                    <i class="fa-solid fa-download"></i> Download File
+                    <div class="preview-placeholder">
+                        <i class="fa-solid fa-file-lines"></i>
+                        <strong><%= isPdf ? 'PDF file' : isTextish ? 'Document file' : 'Downloadable file' %></strong>
+                        <p style="margin:0.5rem 0 0;">Preview langsung belum tersedia untuk tipe ini, tapi metadata dan download tetap tersedia.</p>
+                    </div>
                 <% } %>
-            </a>
-        <% } %>
+            </div>
 
-        <div class="action-grid">
-            <% if (locals.isLoggedIn) { %>
-                <button class="action-btn secondary" id="saveToAccountBtn">
-                    <i class="fa-solid fa-cloud-arrow-down"></i> Save
-                </button>
+            <% if (file.isBurnAfterRead) { %>
+                <div class="alert-box warning"><i class="fa-solid fa-fire"></i> File ini akan terhapus otomatis setelah diunduh.</div>
             <% } %>
-            <button class="action-btn secondary" onclick="showQrCode()">
-                <i class="fa-solid fa-qrcode"></i> QR Code
-            </button>
-            <button class="action-btn secondary" onclick="scanVirus()" id="scanBtn">
-                <i class="fa-solid fa-shield-virus"></i> Scan
-            </button>
-        </div>
 
-        <div class="hash-info">
-            <div><strong>MD5:</strong> <code><%= file.md5Hash || 'n/a' %></code></div>
-            <div><strong>SHA256:</strong> <code><%= file.sha256Hash || 'n/a' %></code></div>
-        </div>
+            <% if (!locals.user || locals.user.plan === 'free') { %>
+                <div id="countdownContainer" class="countdown-box" style="margin-bottom: 1rem;">
+                    Download Anda akan dimulai dalam <span id="timer">10</span> detik.
+                </div>
+                <a href="<%= downloadLink %>" class="btn primary-btn download-btn disabled" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
+                    <i class="fa-solid fa-spinner fa-spin"></i> Mohon tunggu...
+                </a>
+            <% } else { %>
+                <a href="<%= downloadLink %>" class="btn primary-btn download-btn" id="downloadLinkBtn" <%= file.isFolder ? '' : 'download' %>>
+                    <i class="fa-solid fa-download"></i> <%= file.isFolder ? 'Download Folder as ZIP' : 'Download File' %>
+                </a>
+            <% } %>
 
-        <div class="share-buttons">
-            <span>Share:</span>
-            <a href="https://wa.me/?text=Download <%= file.originalName %> here: <%= downloadLink %>" target="_blank" class="share-btn whatsapp"><i class="fa-brands fa-whatsapp"></i></a>
-            <a href="https://twitter.com/intent/tweet?text=Check out this file&url=<%= downloadLink %>" target="_blank" class="share-btn twitter"><i class="fa-brands fa-twitter"></i></a>
-            <button onclick="navigator.clipboard.writeText(window.location.href); showToast('Link copied!')" class="share-btn copy"><i class="fa-solid fa-link"></i></button>
-        </div>
+            <div class="action-grid">
+                <% if (locals.isLoggedIn) { %>
+                    <button class="action-btn" id="saveToAccountBtn">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Save
+                    </button>
+                <% } %>
+                <% if (canShowQr) { %>
+                    <button class="action-btn" onclick="showQrCode()">
+                        <i class="fa-solid fa-qrcode"></i> QR Code
+                    </button>
+                <% } %>
+                <% if (canScan) { %>
+                    <button class="action-btn" onclick="scanVirus()" id="scanBtn">
+                        <i class="fa-solid fa-shield-virus"></i> Scan
+                    </button>
+                <% } %>
+            </div>
 
-        <div class="reactions">
-            <button class="react-btn" onclick="react('like')">
-                <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount"><%= file.reactions?.like?.length || 0 %></span>
-            </button>
-            <button class="react-btn" onclick="react('love')">
-                <i class="fa-solid fa-heart"></i> <span id="loveCount"><%= file.reactions?.love?.length || 0 %></span>
-            </button>
-        </div>
+            <div id="virusStatus" style="margin-top: 1rem; display: none;"></div>
 
-        <div class="report-section">
-            <button id="reportBtn" class="report-link">Report this file</button>
-        </div>
+            <div class="share-strip">
+                <span>Share:</span>
+                <a href="https://wa.me/?text=Download <%= encodeURIComponent(file.originalName) %> here: <%= encodeURIComponent(downloadLink) %>" target="_blank" class="share-btn whatsapp"><i class="fa-brands fa-whatsapp"></i></a>
+                <a href="https://twitter.com/intent/tweet?text=Check out this file&url=<%= encodeURIComponent(downloadLink) %>" target="_blank" class="share-btn twitter"><i class="fa-brands fa-twitter"></i></a>
+                <button onclick="navigator.clipboard.writeText(window.location.href); showToast('Link copied!', 'success')" class="share-btn copy"><i class="fa-solid fa-link"></i></button>
+            </div>
+
+            <div class="reactions">
+                <button class="react-btn" onclick="react('like')">
+                    <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount"><%= file.reactions?.like?.length || 0 %></span>
+                </button>
+                <button class="react-btn" onclick="react('love')">
+                    <i class="fa-solid fa-heart"></i> <span id="loveCount"><%= file.reactions?.love?.length || 0 %></span>
+                </button>
+            </div>
+        </section>
+
+        <aside class="surface-card">
+            <h3 style="margin-top:0;">File details</h3>
+            <div class="file-details-list">
+                <div class="detail-row">
+                    <span>Name</span>
+                    <strong><%= file.originalName %></strong>
+                </div>
+                <div class="detail-row">
+                    <span>Type</span>
+                    <strong><%= file.contentType || 'Unknown' %></strong>
+                </div>
+                <div class="detail-row">
+                    <span>Uploaded by</span>
+                    <strong><%= owner?.username || 'Unknown' %></strong>
+                </div>
+                <div class="detail-row">
+                    <span>Uploaded</span>
+                    <strong><%= new Date(file.createdAt).toLocaleDateString('id-ID') %></strong>
+                </div>
+            </div>
+
+            <div class="hash-box" style="margin-top: 1rem;">
+                <div style="margin-bottom:0.8rem;"><strong>MD5</strong><br><code><%= file.md5Hash || 'n/a' %></code></div>
+                <div><strong>SHA256</strong><br><code><%= file.sha256Hash || 'n/a' %></code></div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <button id="reportBtn" class="report-link">Report this file</button>
+            </div>
+        </aside>
     </div>
 
-    <div class="comments-section">
+    <section class="surface-card comments-section">
         <h3>Comments (<%= file.comments ? file.comments.length : 0 %>)</h3>
         <div class="comment-list" id="commentList">
             <% if(file.comments && file.comments.length > 0) { %>
@@ -137,22 +405,22 @@
                     <div class="comment">
                         <strong><%= c.username %></strong>
                         <p><%- c.text.replace(/@(\w+)/g, '<a href="/u/$1" class="mention">@$1</a>') %></p>
-                        <small><%= new Date(c.createdAt).toLocaleDateString() %></small>
+                        <small><%= new Date(c.createdAt).toLocaleDateString('id-ID') %></small>
                     </div>
                 <% }) %>
             <% } else { %>
-                <p class="text-muted">No comments yet. Be the first to comment!</p>
+                <p class="text-muted">No comments yet. Be the first to comment.</p>
             <% } %>
         </div>
         <% if (isLoggedIn) { %>
-            <form id="commentForm">
-                <input type="text" name="text" placeholder="Write a comment... (use @username to mention)" required>
-                <button type="submit">Post</button>
+            <form id="commentForm" style="margin-top: 1rem;">
+                <input type="text" name="text" placeholder="Write a comment... (use @username to mention)" required class="full-input">
+                <button type="submit" class="btn primary-btn" style="margin-top: 0.75rem;">Post Comment</button>
             </form>
         <% } else { %>
-            <p style="text-align:center;"><a href="/login">Login</a> to comment.</p>
+            <p style="margin-top:1rem;"><a href="/login">Login</a> to comment.</p>
         <% } %>
-    </div>
+    </section>
 </main>
 
 <div class="modal" id="qrModal">
@@ -213,21 +481,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.scanVirus = async () => {
         const btn = document.getElementById('scanBtn');
         const statusDiv = document.getElementById('virusStatus');
+        if (!btn || !statusDiv) return;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         btn.disabled = true;
         statusDiv.style.display = 'block';
-        statusDiv.innerHTML = `<div class="alert-box info"><i class="fa-solid fa-spinner fa-spin"></i> Checking file safety...</div>`;
+        statusDiv.innerHTML = '<div class="alert-box info"><i class="fa-solid fa-spinner fa-spin"></i> Checking file safety...</div>';
         try {
             const res = await fetch('/api/files/<%= file._id %>/scan', { method: 'POST' });
             const data = await res.json();
-            if (data.status === 'clean') statusDiv.innerHTML = `<div class="alert-box success"><i class="fa-solid fa-shield-virus"></i> Safe / Clean (VirusTotal)</div>`;
-            else if (data.status === 'infected') statusDiv.innerHTML = `<div class="alert-box danger"><i class="fa-solid fa-triangle-exclamation"></i> Threat Detected!</div>`;
-            else statusDiv.innerHTML = `<div class="alert-box warning"><i class="fa-solid fa-circle-question"></i> Scan Unavailable / Queued</div>`;
+            if (data.status === 'clean') statusDiv.innerHTML = '<div class="alert-box success"><i class="fa-solid fa-shield-virus"></i> Safe / Clean</div>';
+            else if (data.status === 'infected') statusDiv.innerHTML = '<div class="alert-box danger"><i class="fa-solid fa-triangle-exclamation"></i> Threat detected</div>';
+            else statusDiv.innerHTML = '<div class="alert-box warning"><i class="fa-solid fa-circle-question"></i> Scan unavailable / queued</div>';
         } catch (e) {
             statusDiv.style.display = 'none';
             showToast('Scan failed', 'error');
         } finally {
-            btn.innerHTML = '<i class="fa-solid fa-shield-virus"></i> Scan Virus';
+            btn.innerHTML = '<i class="fa-solid fa-shield-virus"></i> Scan';
             btn.disabled = false;
         }
     };
@@ -235,10 +504,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('saveToAccountBtn');
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            if(!confirm('Save this file to your account?')) return;
+            if (!confirm('Save this file to your account?')) return;
             const res = await fetch('/api/files/<%= file._id %>/import', { method: 'POST' });
             const data = await res.json();
-            if(res.ok) showToast(data.message, 'success');
+            if (res.ok) showToast(data.message, 'success');
             else showToast(data.message, 'error');
         });
     }
@@ -246,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const allModals = document.querySelectorAll('.modal');
     function closeModal() { allModals.forEach(m => m.classList.remove('active')); }
     allModals.forEach(modal => {
-        modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
         modal.querySelector('.cancel-btn')?.addEventListener('click', closeModal);
     });
 
@@ -254,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const modal = document.getElementById('qrModal');
         const img = document.getElementById('qrImage');
         modal.classList.add('active');
-        if(!img.src) {
+        if (!img.src) {
             const res = await fetch('/api/files/<%= file.customAlias %>/qrcode');
             const data = await res.json();
             img.src = data.qrCode;
@@ -262,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const reportModal = document.getElementById('reportModal');
-    document.getElementById('reportBtn').addEventListener('click', () => reportModal.classList.add('active'));
+    document.getElementById('reportBtn')?.addEventListener('click', () => reportModal.classList.add('active'));
 
     document.getElementById('reportForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -272,34 +541,37 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData)
         });
-        if (res.ok) { showToast('Report submitted.', 'success'); closeModal(); }
+        if (res.ok) {
+            showToast('Report submitted.', 'success');
+            closeModal();
+        }
     });
 
     window.react = async (type) => {
         const res = await fetch('/api/files/<%= file.customAlias %>/react', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({type})
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type })
         });
         const data = await res.json();
-        if(res.ok) {
+        if (res.ok) {
             document.getElementById('likeCount').textContent = data.counts.like;
             document.getElementById('loveCount').textContent = data.counts.love;
         }
     };
 
     const commentForm = document.getElementById('commentForm');
-    if(commentForm) {
-        commentForm.addEventListener('submit', async(e) => {
+    if (commentForm) {
+        commentForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const text = e.target.text.value;
-            if(!text) return;
+            if (!text) return;
             const res = await fetch('/api/files/<%= file.customAlias %>/comment', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
             });
-            if(res.ok) location.reload();
+            if (res.ok) location.reload();
         });
     }
 });

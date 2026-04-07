@@ -10,7 +10,7 @@ const loginLimiter = rateLimit({
 
 const registerLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, 
-    max: 1, 
+    max: 5, 
     message: { message: 'Too many accounts created from this IP, please try again after an hour.' },
     standardHeaders: true,
     legacyHeaders: false,

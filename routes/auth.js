@@ -17,25 +17,89 @@ const PASS_EXPIRY_DAYS = 90;
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_TIME = 15 * 60 * 1000; 
 
+function escapeRegex(value = '') {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function findUserByUsername(username) {
+    const cleanUsername = typeof username === 'string' ? username.trim() : '';
+    if (!cleanUsername) return null;
+    return User.findOne({ username: { $regex: new RegExp(`^${escapeRegex(cleanUsername)}$`, 'i') } });
+}
+
+function getCookieOptions(req, maxAge) {
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    return {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: Boolean(isSecure),
+        maxAge
+    };
+}
+
+function getLocationFromRequest(ip) {
+    const geo = geoip.lookup(ip);
+    return geo ? `${geo.city || 'Unknown City'}, ${geo.country}` : 'Unknown';
+}
+
+async function createUserSession(req, res, user, locationOverride) {
+    const ip = req.ip || req.connection.remoteAddress;
+    const agent = useragent.parse(req.headers['user-agent']);
+    const deviceId = crypto.randomBytes(16).toString('hex');
+    const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    user.sessions.push({
+        refreshToken,
+        deviceId,
+        ip,
+        os: agent.os.toString(),
+        browser: agent.toAgent(),
+        location: locationOverride || getLocationFromRequest(ip)
+    });
+
+    user.loginHistory.push({
+        ip,
+        os: agent.os.toString(),
+        browser: agent.toAgent(),
+        location: locationOverride || getLocationFromRequest(ip)
+    });
+
+    if (user.loginHistory.length > 20) user.loginHistory.shift();
+    await user.save();
+
+    res.clearCookie('temp_token', getCookieOptions(req, 0));
+    res.cookie('token', accessToken, getCookieOptions(req, 900000));
+    res.cookie('refresh_token', refreshToken, getCookieOptions(req, 604800000));
+}
+
 router.post('/register', registerLimiter, async (req, res) => {
     try {
         const { username, password, referralCode } = req.body;
-        if (!username || !password) return res.status(400).json({ message: 'Required fields missing.' });
+        const cleanUsername = typeof username === 'string' ? username.trim() : '';
+        const cleanReferralCode = typeof referralCode === 'string' ? referralCode.trim().toUpperCase() : '';
+
+        if (!cleanUsername || !password) return res.status(400).json({ message: 'Required fields missing.' });
+        if (cleanUsername.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters.' });
+        if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
         
-        const existingUser = await User.findOne({ username });
+        const existingUser = await findUserByUsername(cleanUsername);
         if (existingUser) return res.status(400).json({ message: 'Username exists.' });
 
         let referrer = null;
-        if (referralCode) {
-            referrer = await User.findOne({ referralCode });
+        if (cleanReferralCode) {
+            referrer = await User.findOne({ referralCode: cleanReferralCode });
             if (referrer) {
                 referrer.storageBonus += 52428800;
+                referrer.referralCount += 1;
                 await referrer.save();
             }
         }
 
         const user = new User({ 
-            username, 
+            username: cleanUsername, 
             password, 
             referredBy: referrer?._id, 
             storageBonus: referrer ? 52428800 : 0 
@@ -50,10 +114,11 @@ router.post('/register', registerLimiter, async (req, res) => {
 router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { username, password } = req.body;
-        const user = await User.findOne({ username });
+        const user = await findUserByUsername(username);
         const ip = req.ip || req.connection.remoteAddress;
         
         if (!user) return res.status(401).json({ message: 'Invalid credentials.' });
+        if (user.isBanned) return res.status(403).json({ message: 'Account banned.' });
 
         if (user.lockUntil && user.lockUntil > Date.now()) {
             return res.status(423).json({ 
@@ -86,42 +151,12 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         if (user.isTwoFactorEnabled) {
             const tempToken = jwt.sign({ id: user._id, partial: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
-            res.cookie('temp_token', tempToken, { httpOnly: true });
+            res.cookie('temp_token', tempToken, getCookieOptions(req, 300000));
             await user.save();
             return res.status(200).json({ status: '2fa_required', message: '2FA required.' });
         }
-
-        const agent = useragent.parse(req.headers['user-agent']);
-        const geo = geoip.lookup(ip);
-        const location = geo ? `${geo.city}, ${geo.country}` : 'Unknown';
-        const deviceId = crypto.randomBytes(16).toString('hex');
         
-        const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
-        const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-        user.sessions.push({
-            refreshToken,
-            deviceId,
-            ip,
-            os: agent.os.toString(),
-            browser: agent.toAgent(),
-            location
-        });
-
-        user.loginHistory.push({
-            ip,
-            os: agent.os.toString(),
-            browser: agent.toAgent(),
-            location
-        });
-        
-        if (user.loginHistory.length > 20) user.loginHistory.shift();
-
-        await user.save();
-
-        res.cookie('token', accessToken, { httpOnly: true, maxAge: 900000 });
-        res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
-        
+        await createUserSession(req, res, user);
         res.status(200).json({ message: 'Login successful.' });
     } catch (error) {
         res.status(500).json({ message: 'Login error.' });
@@ -136,6 +171,8 @@ router.post('/login/2fa', async (req, res) => {
     try {
         const decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
         const user = await User.findById(decoded.id);
+        if (!user) return res.status(401).json({ message: 'Session expired.' });
+        if (user.isBanned) return res.status(403).json({ message: 'Account banned.' });
         
         const verified = speakeasy.totp.verify({
             secret: user.twoFactorSecret.ascii,
@@ -144,25 +181,7 @@ router.post('/login/2fa', async (req, res) => {
         });
 
         if(verified) {
-            const agent = useragent.parse(req.headers['user-agent']);
-            const deviceId = crypto.randomBytes(16).toString('hex');
-            
-            const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
-            const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
-            
-            user.sessions.push({
-                refreshToken,
-                deviceId,
-                ip: req.ip || req.connection.remoteAddress,
-                os: agent.os.toString(),
-                browser: agent.toAgent(),
-                location: 'Unknown (2FA)'
-            });
-            await user.save();
-
-            res.clearCookie('temp_token');
-            res.cookie('token', token, { httpOnly: true, maxAge: 900000 });
-            res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
+            await createUserSession(req, res, user, 'Unknown (2FA)');
             res.json({ message: 'Login successful' });
         } else {
             res.status(400).json({ message: 'Invalid 2FA code' });
@@ -209,7 +228,7 @@ router.post('/passkey/login-options', async (req, res) => {
         const { username } = req.body;
         let user;
         if (username) {
-            user = await User.findOne({ username });
+            user = await findUserByUsername(username);
         }
         
         const options = await generatePasskeyLoginOptions(user);
@@ -249,42 +268,14 @@ router.post('/passkey/verify-login', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: "User not found or passkey not linked." });
         }
+        if (user.isBanned) {
+            return res.status(403).json({ error: "Account banned." });
+        }
 
         const verification = await verifyPasskeyLogin(user, req.body);
 
         if (verification.verified) {
-            const ip = req.ip || req.connection.remoteAddress;
-            const agent = useragent.parse(req.headers['user-agent']);
-            const geo = geoip.lookup(ip);
-            const location = geo ? `${geo.city}, ${geo.country}` : 'Unknown';
-            const deviceId = crypto.randomBytes(16).toString('hex');
-
-            const accessToken = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '15m' });
-            const refreshToken = jwt.sign({ id: user._id, deviceId }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-            user.sessions.push({
-                refreshToken,
-                deviceId,
-                ip,
-                os: agent.os.toString(),
-                browser: agent.toAgent(),
-                location
-            });
-
-            user.loginHistory.push({
-                ip,
-                os: agent.os.toString(),
-                browser: agent.toAgent(),
-                location
-            });
-
-            if (user.loginHistory.length > 20) user.loginHistory.shift();
-
-            await user.save();
-
-            res.cookie('token', accessToken, { httpOnly: true, maxAge: 900000 });
-            res.cookie('refresh_token', refreshToken, { httpOnly: true, maxAge: 604800000 });
-            
+            await createUserSession(req, res, user);
             return res.json({ verified: true, message: 'Passkey login successful.' });
         }
 

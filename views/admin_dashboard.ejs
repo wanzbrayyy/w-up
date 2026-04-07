@@ -120,6 +120,9 @@
                                     <% if (req.details.botType) { %>
                                         <p style="font-size:0.85rem; margin:0;">Bot: <%= req.details.botType %></p>
                                     <% } %>
+                                    <% if (req.details.template) { %>
+                                        <p style="font-size:0.85rem; margin:0;">Template: <%= req.details.template %></p>
+                                    <% } %>
                                      <% if (req.details.description) { %>
                                         <p style="font-size:0.85rem; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<%= req.details.description %>">
                                             Desc: <%= req.details.description.substring(0, 50) %>...

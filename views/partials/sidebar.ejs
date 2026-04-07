@@ -5,42 +5,53 @@
     </div>
 
     <div class="sidebar-menu">
-        <a href="/dashboard" class="menu-item">
+        <a href="/dashboard" class="menu-item <%= locals.currentUrl && locals.currentUrl.startsWith('/dashboard') && !locals.currentUrl.includes('filter=shared') && !locals.currentUrl.includes('filter=starred') && !locals.currentUrl.includes('filter=trash') ? 'active' : '' %>">
             <i class="fa-solid fa-hard-drive"></i> My Files
         </a>
-        <a href="/dashboard?filter=shared" class="menu-item">
+        <a href="/dashboard?filter=shared" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('filter=shared') ? 'active' : '' %>">
             <i class="fa-solid fa-users"></i> Shared with me
         </a>
-        <a href="/dashboard?filter=starred" class="menu-item">
+        <a href="/dashboard?filter=starred" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('filter=starred') ? 'active' : '' %>">
             <i class="fa-solid fa-star"></i> Starred
         </a>
-        <a href="/dashboard/teams" class="menu-item">
+        <a href="/dashboard/teams" class="menu-item <%= locals.currentUrl && locals.currentUrl.startsWith('/dashboard/teams') ? 'active' : '' %>">
             <i class="fa-solid fa-people-group"></i> Teams
         </a>
-        <a href="/dashboard?filter=trash" class="menu-item">
+        <a href="/dashboard/affiliate" class="menu-item <%= locals.currentUrl && locals.currentUrl.startsWith('/dashboard/affiliate') ? 'active' : '' %>">
+            <i class="fa-solid fa-bullhorn"></i> Referral
+        </a>
+        <a href="/dashboard?filter=trash" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('filter=trash') ? 'active' : '' %>">
             <i class="fa-solid fa-trash-can"></i> Trash
         </a>
         
         <div class="separator"></div>
         <p class="menu-header">Types</p>
-        <a href="/dashboard?type=image" class="menu-item">
+        <a href="/dashboard?type=image" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('type=image') ? 'active' : '' %>">
             <i class="fa-solid fa-image"></i> Images
         </a>
-        <a href="/dashboard?type=video" class="menu-item">
+        <a href="/dashboard?type=video" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('type=video') ? 'active' : '' %>">
             <i class="fa-solid fa-video"></i> Videos
         </a>
-        <a href="/dashboard?type=doc" class="menu-item">
+        <a href="/dashboard?type=doc" class="menu-item <%= locals.currentUrl && locals.currentUrl.includes('type=doc') ? 'active' : '' %>">
             <i class="fa-solid fa-file-lines"></i> Documents
         </a>
 
         <div class="separator"></div>
-        <a href="/profile" class="menu-item active">
+        <a href="/billing" class="menu-item <%= locals.currentUrl === '/billing' ? 'active' : '' %>">
+            <i class="fa-solid fa-credit-card"></i> Payment
+        </a>
+        <a href="/profile" class="menu-item <%= locals.currentUrl === '/profile' ? 'active' : '' %>">
             <i class="fa-solid fa-user-cog"></i> Settings
         </a>
     </div>
     
     <div class="storage-info">
-        <div class="progress-bar"><div class="fill" style="width: 50%"></div></div>
-        <small>Storage Usage (Demo)</small>
+        <% 
+            const totalLimit = (user.storageLimit || 0) + (user.storageBonus || 0);
+            const used = user.storageUsed || 0;
+            const percentage = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
+        %>
+        <div class="progress-bar"><div class="fill" style="width: <%= percentage %>%"></div></div>
+        <small><%= (used / 1024 / 1024 / 1024).toFixed(2) %> GB / <%= (totalLimit / 1024 / 1024 / 1024).toFixed(2) %> GB</small>
     </div>
 </aside>

@@ -1,0 +1,644 @@
+<%- include('partials/header', { title: 'Payment', pageCss: 'dashboard' }) %>
+
+<div class="dashboard-layout">
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content">
+        <section class="action-bar">
+            <div class="left-actions">
+                <button class="icon-btn mobile-menu-btn" id="sidebarToggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <h1 style="font-size: 1.5rem; margin: 0;">Billing & Payment Center</h1>
+            </div>
+        </section>
+
+        <div class="billing-shell">
+            <section class="billing-hero">
+                <div class="hero-copy">
+                    <span class="hero-badge">Real Payment Active</span>
+                    <h2>Upgrade PRO dengan Midtrans dan buka katalog PPOB langsung dari dashboard Anda.</h2>
+                    <p>Halaman ini sekarang tidak lagi demo. Checkout PRO dibuat sebagai transaksi permanen, statusnya tersimpan, dan histori pembayarannya tampil di akun Anda.</p>
+                    <div class="hero-metrics">
+                        <div class="hero-metric">
+                            <small>Plan saat ini</small>
+                            <strong><%= currentPlan.toUpperCase() %></strong>
+                        </div>
+                        <div class="hero-metric">
+                            <small>Berakhir</small>
+                            <strong><%= currentExpiry ? new Date(currentExpiry).toLocaleDateString('id-ID') : 'Belum aktif' %></strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-card">
+                    <div class="hero-card-top">
+                        <span>Status gateway</span>
+                        <strong class="<%= midtransEnabled ? 'ok' : 'warn' %>"><%= midtransEnabled ? 'Midtrans Ready' : 'Belum dikonfigurasi' %></strong>
+                    </div>
+                    <div class="hero-card-price">Rp <%= monthlyPrice.toLocaleString('id-ID') %><small>/bulan</small></div>
+                    <p>Storage 50 GB, branding PRO, public page yang lebih premium, dan akses workflow yang lebih lengkap.</p>
+                </div>
+            </section>
+
+            <div class="billing-tabs">
+                <button class="billing-tab active" data-tab="proTab">PRO Upgrade</button>
+                <button class="billing-tab" data-tab="ppobTab">PPOB Catalog</button>
+                <button class="billing-tab" data-tab="historyTab">Riwayat</button>
+            </div>
+
+            <section class="billing-pane active" id="proTab">
+                <div class="billing-grid">
+                    <section class="billing-card">
+                        <div class="section-head">
+                            <div>
+                                <h3>Pilih paket PRO</h3>
+                                <p>Checkout akan diarahkan ke Snap Midtrans dan status pembayarannya disimpan permanen.</p>
+                            </div>
+                        </div>
+
+                        <div class="plan-grid">
+                            <button class="plan-card active" data-cycle="monthly" data-price="<%= monthlyPrice %>">
+                                <span class="plan-pill">Populer</span>
+                                <strong>Monthly PRO</strong>
+                                <div class="plan-price">Rp <%= monthlyPrice.toLocaleString('id-ID') %></div>
+                                <small>30 hari, 50 GB storage, fleksibel untuk mulai cepat.</small>
+                            </button>
+                            <button class="plan-card" data-cycle="yearly" data-price="<%= yearlyPrice %>">
+                                <span class="plan-pill alt">Best Value</span>
+                                <strong>Yearly PRO</strong>
+                                <div class="plan-price">Rp <%= yearlyPrice.toLocaleString('id-ID') %></div>
+                                <small>365 hari, jauh lebih hemat untuk penggunaan rutin.</small>
+                            </button>
+                        </div>
+
+                        <div class="method-block">
+                            <div>
+                                <h3>Metode prioritas</h3>
+                                <p>Anda tetap bisa memilih kanal lain di Snap, tapi kami prioritaskan opsi yang Anda pilih di sini.</p>
+                            </div>
+                            <div class="method-grid">
+                                <button class="method-card active" data-method="qris">
+                                    <i class="fa-solid fa-qrcode"></i>
+                                    <span>QRIS</span>
+                                </button>
+                                <button class="method-card" data-method="bank_transfer">
+                                    <i class="fa-solid fa-building-columns"></i>
+                                    <span>Bank Transfer</span>
+                                </button>
+                                <button class="method-card" data-method="ewallet">
+                                    <i class="fa-solid fa-wallet"></i>
+                                    <span>E-Wallet</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="feature-list">
+                            <div><i class="fa-solid fa-check"></i> Aktivasi PRO otomatis setelah pembayaran sukses</div>
+                            <div><i class="fa-solid fa-check"></i> Riwayat transaksi tersimpan dan bisa dicek ulang</div>
+                            <div><i class="fa-solid fa-check"></i> Subscription diperpanjang, bukan ditimpa kalau masih aktif</div>
+                        </div>
+                    </section>
+
+                    <section class="billing-card summary-card">
+                        <h3>Ringkasan checkout</h3>
+                        <div class="summary-list">
+                            <div class="summary-row">
+                                <span>Paket</span>
+                                <strong id="summaryPlan">Monthly PRO</strong>
+                            </div>
+                            <div class="summary-row">
+                                <span>Metode</span>
+                                <strong id="summaryMethod">QRIS</strong>
+                            </div>
+                            <div class="summary-row">
+                                <span>Upgrade target</span>
+                                <strong>PRO 50 GB</strong>
+                            </div>
+                            <div class="summary-row total">
+                                <span>Total</span>
+                                <strong id="summaryTotal">Rp <%= monthlyPrice.toLocaleString('id-ID') %></strong>
+                            </div>
+                        </div>
+
+                        <% if (midtransEnabled) { %>
+                            <button id="payNowBtn" class="btn primary-btn pay-btn">
+                                <i class="fa-solid fa-credit-card"></i> Bayar via Midtrans
+                            </button>
+                        <% } else { %>
+                            <div class="gateway-warning">
+                                Midtrans belum aktif. Pastikan env `MIDTRANS_*` sudah benar lalu restart server.
+                            </div>
+                        <% } %>
+
+                        <div class="summary-note">
+                            Transaksi yang berhasil akan otomatis memperpanjang masa aktif PRO Anda dan masuk ke riwayat pembayaran.
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="billing-pane" id="ppobTab">
+                <div class="billing-card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Katalog PPOB</h3>
+                            <p>Daftar layanan ditarik langsung dari API Jagoanpedia dengan action <code>services</code>.</p>
+                        </div>
+                        <button class="btn secondary-btn" id="reloadPpobBtn">
+                            <i class="fa-solid fa-rotate"></i> Refresh
+                        </button>
+                    </div>
+
+                    <div class="ppob-toolbar">
+                        <input type="text" id="ppobSearch" class="full-input" placeholder="Cari operator, kategori, atau nama layanan...">
+                        <select id="ppobCategory" class="full-input">
+                            <option value="">Semua kategori</option>
+                        </select>
+                    </div>
+
+                    <div id="ppobMeta" class="ppob-meta">Memuat katalog PPOB...</div>
+                    <div class="ppob-grid" id="ppobGrid"></div>
+                </div>
+            </section>
+
+            <section class="billing-pane" id="historyTab">
+                <div class="billing-card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Riwayat pembayaran</h3>
+                            <p>Transaksi terbaru Anda untuk upgrade PRO.</p>
+                        </div>
+                    </div>
+
+                    <div class="history-list">
+                        <% if (!recentTransactions || recentTransactions.length === 0) { %>
+                            <div class="empty-state billing-empty">
+                                <i class="fa-solid fa-receipt"></i>
+                                <p>Belum ada transaksi tersimpan.</p>
+                            </div>
+                        <% } %>
+
+                        <% (recentTransactions || []).forEach(item => { %>
+                            <div class="history-item">
+                                <div>
+                                    <strong><%= item.billingCycle === 'yearly' ? 'Yearly PRO' : 'Monthly PRO' %></strong>
+                                    <small><%= item.orderId %></small>
+                                </div>
+                                <div class="history-mid">
+                                    <span>Rp <%= Number(item.amount || 0).toLocaleString('id-ID') %></span>
+                                    <small><%= new Date(item.createdAt).toLocaleString('id-ID') %></small>
+                                </div>
+                                <div class="history-status <%= item.status %>">
+                                    <%= item.status %>
+                                </div>
+                            </div>
+                        <% }) %>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<style>
+    .billing-shell { padding: 1.5rem; max-width: 1220px; margin: 0 auto; }
+    .billing-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
+        gap: 1.5rem;
+        padding: 1.85rem;
+        border-radius: 28px;
+        background:
+            radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 28%),
+            linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(29, 78, 216, 0.92));
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 26px 54px rgba(15, 23, 42, 0.22);
+        margin-bottom: 1.5rem;
+    }
+    .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .billing-hero h2 { margin: 0.85rem 0 0.75rem; font-size: clamp(2rem, 3vw, 2.7rem); line-height: 1.15; }
+    .billing-hero p { margin: 0; color: rgba(255,255,255,0.78); line-height: 1.75; }
+    .hero-metrics { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.3rem; }
+    .hero-metric {
+        min-width: 180px;
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.14);
+    }
+    .hero-metric small { display: block; color: rgba(255,255,255,0.72); margin-bottom: 0.3rem; }
+    .hero-card {
+        padding: 1.4rem;
+        border-radius: 24px;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.16);
+        backdrop-filter: blur(10px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .hero-card-top { display: flex; justify-content: space-between; gap: 0.75rem; color: rgba(255,255,255,0.76); }
+    .hero-card-top strong.ok { color: #bbf7d0; }
+    .hero-card-top strong.warn { color: #fde68a; }
+    .hero-card-price { margin-top: 1.5rem; font-size: 2.35rem; font-weight: 800; }
+    .hero-card-price small { font-size: 1rem; color: rgba(255,255,255,0.72); margin-left: 0.35rem; }
+    .billing-tabs { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .billing-tab {
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 0.8rem 1.15rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .billing-tab.active {
+        background: linear-gradient(135deg, #0f172a, #1d4ed8);
+        color: #fff;
+        border-color: transparent;
+    }
+    .billing-pane { display: none; }
+    .billing-pane.active { display: block; }
+    .billing-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(310px, 0.85fr);
+        gap: 1.5rem;
+    }
+    .billing-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 1.5rem;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+    }
+    .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+    .section-head h3 { margin: 0; }
+    .section-head p { margin: 0.35rem 0 0; color: var(--muted-text); line-height: 1.65; }
+    .plan-grid, .method-grid { display: grid; gap: 1rem; }
+    .plan-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .method-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .plan-card, .method-card {
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.9));
+        color: var(--text);
+        border-radius: 20px;
+        padding: 1.15rem;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .plan-card:hover, .method-card:hover, .plan-card.active, .method-card.active {
+        transform: translateY(-2px);
+        border-color: #2563eb;
+        box-shadow: 0 18px 32px rgba(37, 99, 235, 0.12);
+    }
+    .plan-pill {
+        display: inline-flex;
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.28rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(37,99,235,0.12);
+        color: #1d4ed8;
+        margin-bottom: 0.8rem;
+    }
+    .plan-pill.alt { background: rgba(249,115,22,0.14); color: #c2410c; }
+    .plan-price { font-size: 1.55rem; font-weight: 800; margin: 0.45rem 0; }
+    .plan-card small, .method-card span { color: var(--muted-text); }
+    .method-card { text-align: center; }
+    .method-card i { display: block; font-size: 1.5rem; color: #1d4ed8; margin-bottom: 0.55rem; }
+    .method-block { margin-top: 1.5rem; }
+    .feature-list {
+        margin-top: 1.5rem;
+        display: grid;
+        gap: 0.75rem;
+        color: var(--muted-text);
+    }
+    .feature-list div {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem;
+        border-radius: 16px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+    }
+    .feature-list i { color: #16a34a; }
+    .summary-card { position: sticky; top: 1.5rem; }
+    .summary-list { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.25rem; }
+    .summary-row { display: flex; justify-content: space-between; gap: 0.75rem; color: var(--muted-text); }
+    .summary-row strong { color: var(--text); text-align: right; }
+    .summary-row.total { padding-top: 1rem; border-top: 1px solid var(--border); font-size: 1.05rem; }
+    .pay-btn {
+        width: 100%;
+        justify-content: center;
+        background: linear-gradient(135deg, #1d4ed8, #f97316);
+        border: none;
+        margin-bottom: 0.85rem;
+    }
+    .gateway-warning, .summary-note, .ppob-meta {
+        padding: 0.95rem 1rem;
+        border-radius: 16px;
+        line-height: 1.65;
+        color: var(--muted-text);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+    }
+    .ppob-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.7fr);
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .ppob-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+    .ppob-card {
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.9));
+    }
+    .ppob-card strong { display: block; margin-bottom: 0.35rem; }
+    .ppob-card small { color: var(--muted-text); display: block; line-height: 1.6; }
+    .ppob-price { margin-top: 0.85rem; font-size: 1.15rem; font-weight: 800; }
+    .ppob-status {
+        display: inline-flex;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-top: 0.85rem;
+        background: rgba(22,163,74,0.1);
+        color: #15803d;
+    }
+    .history-list { display: grid; gap: 0.95rem; }
+    .history-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(180px, 0.8fr) auto;
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+    .history-item strong, .history-mid span { display: block; }
+    .history-item small, .history-mid small { color: var(--muted-text); }
+    .history-status {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        font-weight: 800;
+        padding: 0.42rem 0.72rem;
+        border-radius: 999px;
+        text-align: center;
+    }
+    .history-status.paid { background: rgba(22,163,74,0.12); color: #15803d; }
+    .history-status.pending { background: rgba(245,158,11,0.14); color: #b45309; }
+    .history-status.expire,
+    .history-status.cancel,
+    .history-status.failure,
+    .history-status.deny { background: rgba(239,68,68,0.12); color: #b91c1c; }
+    .billing-empty { min-height: 200px; }
+    @media (max-width: 1040px) {
+        .billing-hero, .billing-grid { grid-template-columns: 1fr; }
+        .summary-card { position: static; }
+    }
+    @media (max-width: 720px) {
+        .billing-shell { padding: 1rem; }
+        .ppob-toolbar, .history-item { grid-template-columns: 1fr; }
+    }
+</style>
+
+<% if (midtransEnabled) { %>
+    <script src="<%= midtransScriptUrl %>" data-client-key="<%= midtransClientKey %>"></script>
+<% } %>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const sidebar = document.getElementById('mainSidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+    const tabs = document.querySelectorAll('.billing-tab');
+    const panes = document.querySelectorAll('.billing-pane');
+    const planCards = document.querySelectorAll('.plan-card');
+    const methodCards = document.querySelectorAll('.method-card');
+    const summaryPlan = document.getElementById('summaryPlan');
+    const summaryMethod = document.getElementById('summaryMethod');
+    const summaryTotal = document.getElementById('summaryTotal');
+    const payNowBtn = document.getElementById('payNowBtn');
+    const ppobGrid = document.getElementById('ppobGrid');
+    const ppobMeta = document.getElementById('ppobMeta');
+    const ppobSearch = document.getElementById('ppobSearch');
+    const ppobCategory = document.getElementById('ppobCategory');
+    const reloadPpobBtn = document.getElementById('reloadPpobBtn');
+
+    let selectedCycle = 'monthly';
+    let selectedMethod = 'qris';
+    let selectedPrice = Number(document.querySelector('.plan-card.active')?.dataset.price || 0);
+    let ppobLoaded = false;
+    let allServices = [];
+
+    function toggleSidebar() {
+        if (sidebar) sidebar.classList.toggle('active');
+        if (sidebarOverlay) sidebarOverlay.classList.toggle('active');
+    }
+
+    if (sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
+    if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', toggleSidebar);
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
+
+    function formatPrice(value) {
+        return `Rp ${Number(value || 0).toLocaleString('id-ID')}`;
+    }
+
+    function refreshSummary() {
+        summaryPlan.textContent = selectedCycle === 'yearly' ? 'Yearly PRO' : 'Monthly PRO';
+        summaryMethod.textContent = selectedMethod.replace('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
+        summaryTotal.textContent = formatPrice(selectedPrice);
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(item => item.classList.remove('active'));
+            panes.forEach(item => item.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.tab)?.classList.add('active');
+            if (tab.dataset.tab === 'ppobTab' && !ppobLoaded) loadPpobServices();
+        });
+    });
+
+    planCards.forEach(card => {
+        card.addEventListener('click', () => {
+            planCards.forEach(item => item.classList.remove('active'));
+            card.classList.add('active');
+            selectedCycle = card.dataset.cycle;
+            selectedPrice = Number(card.dataset.price || 0);
+            refreshSummary();
+        });
+    });
+
+    methodCards.forEach(card => {
+        card.addEventListener('click', () => {
+            methodCards.forEach(item => item.classList.remove('active'));
+            card.classList.add('active');
+            selectedMethod = card.dataset.method;
+            refreshSummary();
+        });
+    });
+
+    function renderPpob(services) {
+        if (!ppobGrid) return;
+        if (!services.length) {
+            ppobGrid.innerHTML = `
+                <div class="empty-state billing-empty">
+                    <i class="fa-solid fa-store-slash"></i>
+                    <p>Tidak ada layanan yang cocok.</p>
+                </div>
+            `;
+            return;
+        }
+
+        ppobGrid.innerHTML = services.map(service => `
+            <article class="ppob-card">
+                <strong>${service.name || service.id || 'Unknown Service'}</strong>
+                <small>${service.operator || 'Unknown Operator'} • ${service.category || 'General'}</small>
+                <small>${service.note || 'Layanan PPOB dari API catalog.'}</small>
+                <div class="ppob-price">${formatPrice(service.price || 0)}</div>
+                <span class="ppob-status">${service.status || 'Active'}</span>
+            </article>
+        `).join('');
+    }
+
+    function applyPpobFilters() {
+        const search = (ppobSearch?.value || '').trim().toLowerCase();
+        const category = (ppobCategory?.value || '').trim().toLowerCase();
+        const filtered = allServices.filter(service => {
+            const blob = `${service.name || ''} ${service.operator || ''} ${service.category || ''}`.toLowerCase();
+            if (search && !blob.includes(search)) return false;
+            if (category && String(service.category || '').toLowerCase() !== category) return false;
+            return true;
+        });
+        ppobMeta.textContent = `${filtered.length} layanan tampil dari ${allServices.length} layanan katalog.`;
+        renderPpob(filtered);
+    }
+
+    async function loadPpobServices() {
+        if (!ppobGrid || !ppobMeta) return;
+        ppobMeta.textContent = 'Memuat katalog PPOB...';
+        ppobGrid.innerHTML = '';
+
+        try {
+            const response = await fetch('/api/ppob/services');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Gagal memuat katalog PPOB.');
+
+            allServices = Array.isArray(data.services) ? data.services : [];
+            ppobLoaded = true;
+
+            const categories = [...new Set(allServices.map(service => service.category).filter(Boolean))].sort();
+            if (ppobCategory) {
+                ppobCategory.innerHTML = '<option value="">Semua kategori</option>' + categories.map(category => (
+                    `<option value="${String(category).toLowerCase()}">${category}</option>`
+                )).join('');
+            }
+
+            applyPpobFilters();
+        } catch (error) {
+            ppobMeta.textContent = error.message || 'Gagal memuat katalog PPOB.';
+            ppobGrid.innerHTML = `
+                <div class="empty-state billing-empty">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <p>Catalog PPOB belum bisa dimuat sekarang.</p>
+                </div>
+            `;
+        }
+    }
+
+    async function syncPayment(orderId) {
+        try {
+            const response = await fetch(`/api/billing/sync/${encodeURIComponent(orderId)}`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Gagal sinkron status pembayaran.');
+            return data;
+        } catch (error) {
+            showToast(error.message || 'Gagal sinkron status pembayaran.', 'error');
+            return null;
+        }
+    }
+
+    if (payNowBtn) {
+        payNowBtn.addEventListener('click', async () => {
+            payNowBtn.disabled = true;
+            payNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyiapkan pembayaran...';
+
+            try {
+                const response = await fetch('/api/billing/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        billingCycle: selectedCycle,
+                        paymentMethod: selectedMethod
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Gagal membuat transaksi Midtrans.');
+                if (!window.snap) throw new Error('Snap Midtrans tidak berhasil dimuat.');
+
+                window.snap.pay(data.token, {
+                    onSuccess: async () => {
+                        showToast('Pembayaran berhasil. Menyinkronkan akun...', 'success');
+                        await syncPayment(data.orderId);
+                        setTimeout(() => window.location.reload(), 1200);
+                    },
+                    onPending: async () => {
+                        showToast('Pembayaran dibuat. Selesaikan dulu di Midtrans.', 'info');
+                        await syncPayment(data.orderId);
+                    },
+                    onError: () => {
+                        showToast('Pembayaran gagal diproses.', 'error');
+                    },
+                    onClose: () => {
+                        showToast('Popup pembayaran ditutup.', 'warning');
+                    }
+                });
+            } catch (error) {
+                showToast(error.message || 'Terjadi masalah saat membuat checkout.', 'error');
+            } finally {
+                payNowBtn.disabled = false;
+                payNowBtn.innerHTML = '<i class="fa-solid fa-credit-card"></i> Bayar via Midtrans';
+            }
+        });
+    }
+
+    ppobSearch?.addEventListener('input', applyPpobFilters);
+    ppobCategory?.addEventListener('change', applyPpobFilters);
+    reloadPpobBtn?.addEventListener('click', () => {
+        ppobLoaded = false;
+        loadPpobServices();
+    });
+
+    refreshSummary();
+});
+</script>
+
+<%- include('partials/footer') %>

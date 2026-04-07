@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const dns = require('dns');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const cors = require('cors');
@@ -8,9 +9,37 @@ const helmet = require('helmet');
 const hpp = require('hpp');
 const csurf = require('csurf');
 const SystemConfig = require('./models/systemConfig');
+const File = require('./models/file');
 const { loadSystemConfig } = require('./middleware/system');
+const { languages } = require('./utils/tr');
+
+const mongoUri = process.env.MONGO_URI || '';
+if (mongoUri.startsWith('mongodb+srv://')) {
+  const dnsServers = (process.env.MONGO_DNS_SERVERS || '1.1.1.1,8.8.8.8')
+    .split(',')
+    .map(server => server.trim())
+    .filter(Boolean);
+
+  if (dnsServers.length > 0) {
+    dns.setServers(dnsServers);
+  }
+}
 
 const app = express();
+
+async function reconcileMongoIndexes() {
+  try {
+    const indexes = await File.collection.indexes();
+    const legacyShareLinkIndex = indexes.find(index => index.name === 'shareLinks.linkId_1');
+
+    if (legacyShareLinkIndex) {
+      await File.collection.dropIndex('shareLinks.linkId_1');
+      console.log('Dropped legacy Mongo index: shareLinks.linkId_1');
+    }
+  } catch (error) {
+    console.error('Mongo index reconciliation warning:', error.message);
+  }
+}
 
 const authRoutes = require('./routes/auth');
 const viewRoutes = require('./routes/view');
@@ -30,6 +59,8 @@ app.use(helmet({
         "cdnjs.cloudflare.com", 
         "cdn.plyr.io", 
         "cdn.jsdelivr.net", 
+        "app.midtrans.com",
+        "app.sandbox.midtrans.com",
         "pagead2.googlesyndication.com",
         "partner.googleadservices.com",
         "www.googletagservices.com",
@@ -47,12 +78,21 @@ app.use(helmet({
       mediaSrc: ["'self'", "data:", "blob:"],
       frameSrc: [
         "'self'", 
+        "app.midtrans.com",
+        "app.sandbox.midtrans.com",
         "docs.google.com", 
         "googleads.g.doubleclick.net", 
         "tpc.googlesyndication.com",
         "www.google.com"
       ],
-      connectSrc: ["'self'", "pagead2.googlesyndication.com"],
+      connectSrc: [
+        "'self'",
+        "app.midtrans.com",
+        "app.sandbox.midtrans.com",
+        "api.midtrans.com",
+        "api.sandbox.midtrans.com",
+        "pagead2.googlesyndication.com"
+      ],
       upgradeInsecureRequests: [],
     },
   },
@@ -79,9 +119,16 @@ app.get('/robots.txt', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'robots.txt'));
 });
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB Connection Error:', err);
+});
+
+mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 15000 })
+  .then(async () => {
+    console.log('MongoDB Connected');
+    await reconcileMongoIndexes();
+  })
+  .catch(err => console.error('MongoDB Initial Connection Error:', err));
 
 const csrfProtection = csurf({ cookie: true });
 
@@ -94,6 +141,8 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   res.locals.currentUrl = req.originalUrl;
+  res.locals.availableLanguages = languages;
+  res.locals.defaultLanguage = 'original';
   if (req.csrfToken) {
     res.locals.csrfToken = req.csrfToken();
   }

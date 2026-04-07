@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const jimp = require('jimp');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
@@ -18,6 +20,7 @@ const archiver = require('archiver');
 const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
+const PaymentTransaction = require('../models/paymentTransaction');
 const { r2, PutObjectCommand, GetObjectCommand } = require('../utils/r2');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
@@ -29,7 +32,15 @@ const {
     generatePasskeyLoginOptions,
     verifyPasskeyLogin
 } = require('../utils/passkey');
+const { translateBatch, languages } = require('../utils/tr');
 const { triggerWebhook } = require('../utils/webhook');
+const { getBillingAmount, activateProPlan } = require('../utils/billing');
+const {
+    hasMidtransConfig,
+    createSnapClient,
+    createCoreApiClient,
+    verifyMidtransSignature
+} = require('../utils/midtrans');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -53,11 +64,22 @@ async function sendEmail(to, subject, htmlContent) {
     }
 }
 
+function isSupportedLanguage(code) {
+    return languages.some(language => language.code === code);
+}
+
 function sanitizeFilename(name) {
+    if (typeof name !== 'string') return '';
     return name.replace(/\0/g, '')
         .replace(/(\.\.(\/|\\|$))+/g, '')
         .replace(/[^\w\s.\-()]/gi, '_')
         .trim();
+}
+
+function normalizeAlias(value, fallback = 'file') {
+    const source = sanitizeFilename(value) || fallback;
+    const normalized = source.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return normalized || `${fallback}_${Date.now()}`;
 }
 
 function validateMagicBytes(buffer, contentType) {
@@ -81,6 +103,403 @@ function validateMagicBytes(buffer, contentType) {
     return true; 
 }
 
+function getBucketName() {
+    return process.env.R2_BUCKET_NAME || 'wanzofc';
+}
+
+function isTruthy(value) {
+    return value === true || value === 'true' || value === '1' || value === 1 || value === 'on';
+}
+
+function parseDataUrl(dataUrl) {
+    if (typeof dataUrl !== 'string') {
+        throw new Error('Invalid file payload.');
+    }
+
+    const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/);
+    if (!match) {
+        throw new Error('Base64 payload must be a valid data URL.');
+    }
+
+    return {
+        contentType: match[1] || 'application/octet-stream',
+        buffer: Buffer.from(match[2], 'base64')
+    };
+}
+
+function sanitizeTagList(tags) {
+    if (!tags) return [];
+    const source = Array.isArray(tags) ? tags : String(tags).split(',');
+    return source
+        .map(tag => sanitizeFilename(String(tag).trim()))
+        .filter(Boolean);
+}
+
+function streamToBuffer(stream) {
+    if (!stream) return Promise.resolve(Buffer.alloc(0));
+    if (Buffer.isBuffer(stream)) return Promise.resolve(stream);
+    if (typeof stream.transformToByteArray === 'function') {
+        return stream.transformToByteArray().then(bytes => Buffer.from(bytes));
+    }
+
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.on('data', chunk => chunks.push(Buffer.from(chunk)));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+}
+
+async function getR2ObjectBuffer(key) {
+    const { Body } = await r2.send(new GetObjectCommand({
+        Bucket: getBucketName(),
+        Key: key
+    }));
+
+    return streamToBuffer(Body);
+}
+
+async function uploadBufferToR2(ownerId, alias, buffer, contentType) {
+    const r2Key = `${ownerId.toString()}/${Date.now()}_${crypto.randomUUID()}_${alias}`;
+    await r2.send(new PutObjectCommand({
+        Bucket: getBucketName(),
+        Key: r2Key,
+        Body: buffer,
+        ContentType: contentType
+    }));
+    return r2Key;
+}
+
+async function ensureUniqueAlias(candidate, fallbackName = 'file') {
+    const fallbackAlias = normalizeAlias(fallbackName, 'file');
+    const parsedExt = path.extname(fallbackAlias);
+    const parsedBase = path.basename(fallbackAlias, parsedExt);
+    let alias = normalizeAlias(candidate, fallbackAlias);
+    let counter = 1;
+
+    while (await File.findOne({ customAlias: alias })) {
+        alias = `${parsedBase}_${counter}${parsedExt}`;
+        counter++;
+    }
+
+    return alias;
+}
+
+async function saveFileWithUniqueAlias(fileDoc, fallbackName) {
+    const parsedExt = path.extname(fallbackName || fileDoc.originalName || '');
+    const parsedBase = path.basename(fallbackName || fileDoc.originalName || 'file', parsedExt);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            await fileDoc.save();
+            return fileDoc;
+        } catch (error) {
+            if (error && error.code === 11000 && error.keyPattern && error.keyPattern.customAlias) {
+                fileDoc.customAlias = `${normalizeAlias(parsedBase, 'file')}_${Date.now()}_${crypto.randomBytes(2).toString('hex')}${parsedExt}`;
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    throw new Error('Could not allocate a unique file alias after multiple attempts.');
+}
+
+async function getOptionalAuthenticatedUser(req) {
+    let token = req.cookies.token;
+
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token && req.headers['x-api-key']) {
+        token = req.headers['x-api-key'];
+    }
+
+    if (!token) return null;
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.id).select('-password');
+        if (user && !user.isBanned) {
+            return user;
+        }
+    } catch (e) {}
+
+    try {
+        const user = await User.findOne({ 'apiKeys.key': token }).select('-password');
+        if (user && !user.isBanned) {
+            return user;
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+function getPpobConfig() {
+    return {
+        url: process.env.PPOB_API_URL || 'https://jagoanpedia.com/api/ppob',
+        key: process.env.PPOB_API_KEY || '2169-de6d54a0-73d9-4380-ab2e-a51bb2a76d33'
+    };
+}
+
+function buildMidtransEnabledPayments(selectedMethod) {
+    const method = String(selectedMethod || '').toLowerCase();
+    if (method === 'qris') return ['qris'];
+    if (method === 'bank_transfer') return ['bank_transfer'];
+    if (method === 'ewallet') return ['gopay', 'shopeepay'];
+    return undefined;
+}
+
+function mapMidtransStatus(transactionStatus, fraudStatus) {
+    if (transactionStatus === 'capture') {
+        return fraudStatus === 'challenge' ? 'challenge' : 'paid';
+    }
+    if (transactionStatus === 'settlement') return 'paid';
+    if (transactionStatus === 'pending') return 'pending';
+    if (transactionStatus === 'deny') return 'deny';
+    if (transactionStatus === 'cancel') return 'cancel';
+    if (transactionStatus === 'expire') return 'expire';
+    if (transactionStatus === 'refund') return 'refund';
+    if (transactionStatus === 'partial_refund') return 'partial_refund';
+    return 'failure';
+}
+
+async function syncPaymentRecordFromMidtrans(transaction, statusPayload, rawPayload) {
+    if (!transaction || !statusPayload) return null;
+
+    const nextStatus = mapMidtransStatus(statusPayload.transaction_status, statusPayload.fraud_status);
+    const wasPaid = transaction.status === 'paid';
+
+    transaction.status = nextStatus;
+    transaction.transactionStatus = statusPayload.transaction_status || transaction.transactionStatus;
+    transaction.fraudStatus = statusPayload.fraud_status || transaction.fraudStatus;
+    transaction.midtransTransactionId = statusPayload.transaction_id || transaction.midtransTransactionId;
+    transaction.midtransStatusCode = statusPayload.status_code || transaction.midtransStatusCode;
+    transaction.paymentMethod = statusPayload.payment_type || transaction.paymentMethod;
+
+    if (statusPayload.expiry_time) {
+        transaction.expiresAt = new Date(statusPayload.expiry_time);
+    }
+    if (statusPayload.transaction_time && nextStatus === 'paid') {
+        transaction.paidAt = new Date(statusPayload.transaction_time);
+    }
+    if (rawPayload) {
+        transaction.rawNotifications = [rawPayload, ...(transaction.rawNotifications || [])].slice(0, 10);
+    }
+
+    if (!wasPaid && nextStatus === 'paid') {
+        const user = await User.findById(transaction.user);
+        if (user) {
+            await activateProPlan(user, transaction.billingCycle);
+            transaction.completedAt = new Date();
+            if (!transaction.paidAt) transaction.paidAt = new Date();
+        }
+    }
+
+    await transaction.save();
+    return transaction;
+}
+
+router.get('/billing/history', auth.protectApi, async (req, res) => {
+    try {
+        const transactions = await PaymentTransaction.find({ user: req.user.id })
+            .sort({ createdAt: -1 })
+            .limit(12)
+            .select('orderId amount billingCycle status paymentMethod createdAt completedAt paidAt snapRedirectUrl');
+
+        res.json({ transactions });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to load billing history.' });
+    }
+});
+
+router.post('/billing/checkout', auth.protectApi, async (req, res) => {
+    try {
+        if (!hasMidtransConfig()) {
+            return res.status(503).json({ message: 'Midtrans is not configured yet.' });
+        }
+
+        const billingCycle = req.body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+        const selectedMethod = typeof req.body.paymentMethod === 'string' ? req.body.paymentMethod : 'auto';
+        const amount = getBillingAmount(billingCycle);
+        const orderId = `PRO-${billingCycle === 'yearly' ? 'YR' : 'MO'}-${String(req.user._id).slice(-6).toUpperCase()}-${Date.now()}`;
+        const planLabel = billingCycle === 'yearly' ? 'PRO Yearly Plan' : 'PRO Monthly Plan';
+        const enabledPayments = buildMidtransEnabledPayments(selectedMethod);
+        const snap = createSnapClient();
+
+        const transactionPayload = {
+            transaction_details: {
+                order_id: orderId,
+                gross_amount: amount
+            },
+            customer_details: {
+                first_name: req.user.username,
+                email: req.user.email || `${req.user.username}@wupload.local`
+            },
+            item_details: [{
+                id: billingCycle === 'yearly' ? 'pro-yearly' : 'pro-monthly',
+                price: amount,
+                quantity: 1,
+                name: planLabel
+            }],
+            custom_field1: req.user.username,
+            custom_field2: billingCycle,
+            metadata: {
+                userId: String(req.user._id),
+                username: req.user.username
+            }
+        };
+
+        if (enabledPayments && enabledPayments.length > 0) {
+            transactionPayload.enabled_payments = enabledPayments;
+        }
+
+        const snapResponse = await snap.createTransaction(transactionPayload);
+        const transaction = new PaymentTransaction({
+            user: req.user.id,
+            orderId,
+            amount,
+            billingCycle,
+            paymentMethod: selectedMethod,
+            snapToken: snapResponse.token,
+            snapRedirectUrl: snapResponse.redirect_url,
+            metadata: {
+                username: req.user.username,
+                selectedMethod,
+                currentPlan: req.user.plan
+            }
+        });
+
+        await transaction.save();
+
+        res.json({
+            orderId,
+            token: snapResponse.token,
+            redirectUrl: snapResponse.redirect_url,
+            amount,
+            billingCycle,
+            message: 'Payment session created.'
+        });
+    } catch (error) {
+        console.error('Billing checkout error:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Failed to create Midtrans payment session.' });
+    }
+});
+
+router.post('/billing/sync/:orderId', auth.protectApi, async (req, res) => {
+    try {
+        if (!hasMidtransConfig()) {
+            return res.status(503).json({ message: 'Midtrans is not configured yet.' });
+        }
+
+        const transaction = await PaymentTransaction.findOne({
+            orderId: req.params.orderId,
+            user: req.user.id
+        });
+        if (!transaction) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+
+        const coreApi = createCoreApiClient();
+        const statusPayload = await coreApi.transaction.status(transaction.orderId);
+        await syncPaymentRecordFromMidtrans(transaction, statusPayload, {
+            source: 'manual-sync',
+            syncedAt: new Date().toISOString()
+        });
+        const refreshedUser = await User.findById(req.user.id).select('plan subscriptionExpiresAt');
+
+        res.json({
+            status: transaction.status,
+            paidAt: transaction.paidAt,
+            completedAt: transaction.completedAt,
+            plan: refreshedUser?.plan || req.user.plan,
+            expiresAt: refreshedUser?.subscriptionExpiresAt || null
+        });
+    } catch (error) {
+        console.error('Billing sync error:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Failed to sync payment status.' });
+    }
+});
+
+router.post('/payments/midtrans/notification', async (req, res) => {
+    try {
+        if (!hasMidtransConfig()) {
+            return res.status(503).json({ message: 'Midtrans is not configured yet.' });
+        }
+
+        if (!verifyMidtransSignature(req.body)) {
+            return res.status(403).json({ message: 'Invalid Midtrans signature.' });
+        }
+
+        const transaction = await PaymentTransaction.findOne({ orderId: req.body.order_id });
+        if (!transaction) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+
+        const coreApi = createCoreApiClient();
+        const statusPayload = await coreApi.transaction.status(transaction.orderId);
+        await syncPaymentRecordFromMidtrans(transaction, statusPayload, req.body);
+
+        res.json({ received: true, status: transaction.status });
+    } catch (error) {
+        console.error('Midtrans notification error:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Failed to process Midtrans notification.' });
+    }
+});
+
+router.get('/ppob/services', auth.protectApi, async (req, res) => {
+    try {
+        const config = getPpobConfig();
+        if (!config.key) {
+            return res.status(503).json({ message: 'PPOB API key is not configured yet.' });
+        }
+
+        const response = await axios.post(config.url, {
+            key: config.key,
+            action: 'services'
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000
+        });
+
+        if (!response.data || response.data.success !== true) {
+            return res.status(400).json({ message: response.data?.error || 'Failed to load PPOB services.' });
+        }
+
+        let services = [];
+        if (Array.isArray(response.data.data)) {
+            services = response.data.data;
+        } else if (response.data.data) {
+            services = [response.data.data];
+        }
+
+        const search = String(req.query.search || '').trim().toLowerCase();
+        const category = String(req.query.category || '').trim().toLowerCase();
+        const operator = String(req.query.operator || '').trim().toLowerCase();
+
+        const filtered = services.filter(service => {
+            const serviceName = String(service.name || '').toLowerCase();
+            const serviceCategory = String(service.category || '').toLowerCase();
+            const serviceOperator = String(service.operator || '').toLowerCase();
+
+            if (search && !`${serviceName} ${serviceCategory} ${serviceOperator}`.includes(search)) return false;
+            if (category && serviceCategory !== category) return false;
+            if (operator && serviceOperator !== operator) return false;
+            return true;
+        });
+
+        res.json({
+            services: filtered,
+            total: filtered.length,
+            source: 'jagoanpedia'
+        });
+    } catch (error) {
+        console.error('PPOB services error:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Failed to fetch PPOB services.' });
+    }
+});
+
 router.post('/folder', auth.protectApi, async (req, res) => {
     try {
         const { name, parentId } = req.body;
@@ -88,7 +507,7 @@ router.post('/folder', auth.protectApi, async (req, res) => {
         
         const newFolder = new File({
             originalName: cleanName,
-            customAlias: `folder_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+            customAlias: await ensureUniqueAlias(`folder_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`, cleanName),
             contentType: 'application/vnd.google-apps.folder',
             size: 0,
             base64: '',
@@ -96,26 +515,46 @@ router.post('/folder', auth.protectApi, async (req, res) => {
             isFolder: true,
             parentId: parentId || null
         });
-        await newFolder.save();
+        await saveFileWithUniqueAlias(newFolder, cleanName);
         res.status(201).json({ status: 'success', folder: newFolder });
     } catch (error) {
         res.status(500).json({ message: 'Error creating folder' });
     }
 });
+
+router.post('/i18n/translate', async (req, res) => {
+    try {
+        const { texts, targetLang, sourceLang } = req.body;
+
+        if (!Array.isArray(texts) || texts.length === 0) {
+            return res.status(400).json({ message: 'Texts array is required.' });
+        }
+
+        if (!targetLang || (targetLang !== 'original' && !isSupportedLanguage(targetLang))) {
+            return res.status(400).json({ message: 'Unsupported target language.' });
+        }
+
+        if (targetLang === 'original') {
+            return res.json({ translations: texts });
+        }
+
+        const sanitizedTexts = texts
+            .slice(0, 250)
+            .map(text => typeof text === 'string' ? text.trim() : '')
+            .map(text => text.slice(0, 5000));
+
+        const translations = await translateBatch(sanitizedTexts, targetLang, sourceLang || 'auto');
+        res.json({ translations });
+    } catch (error) {
+        console.error('I18N Translation Error:', error);
+        res.status(500).json({ message: 'Translation failed.' });
+    }
+});
 // --- UPLOAD LOGIC (Diperbaiki: Menggunakan crypto.randomUUID) ---
 router.post('/upload', async (req, res) => {
     try {
-        let user = null;
+        let user = await getOptionalAuthenticatedUser(req);
         let ownerId = 'guest';
-
-        if (req.headers.authorization || req.cookies.token) {
-            await new Promise((resolve) => {
-                auth.protectApi(req, res, () => {
-                    if(req.user) user = req.user;
-                    resolve();
-                });
-            });
-        }
 
         if (req.body.publicProfileUsername) {
             const publicUser = await User.findOne({ username: req.body.publicProfileUsername, isPublicProfile: true });
@@ -138,22 +577,30 @@ router.post('/upload', async (req, res) => {
             filename, contentType, base64, watermarkText, parentId, description, tags,
             hidden, expires, limit, password, hint, geo, burn, customAlias, stripMetadata
         } = req.body;
+        const cleanFilename = sanitizeFilename(filename);
+        let finalContentType = contentType;
 
-        if (!base64 || !filename || !contentType) {
+        if (!base64 || !cleanFilename || !contentType) {
             return res.status(400).json({ message: 'Missing required fields: filename, contentType, base64.' });
         }
 
-        let buffer = Buffer.from(base64.split(',')[1], 'base64');
+        const parsedPayload = parseDataUrl(base64);
+        let buffer = parsedPayload.buffer;
 
-        if (contentType.startsWith('image/') && stripMetadata === 'true') {
+        if (!validateMagicBytes(buffer, finalContentType)) {
+            return res.status(400).json({ message: 'File rejected due to security policy.' });
+        }
+
+        if (finalContentType.startsWith('image/') && isTruthy(stripMetadata)) {
             buffer = await sharp(buffer).withMetadata(false).toBuffer();
         }
 
-        if (contentType.startsWith('image/') && watermarkText) {
+        if (finalContentType.startsWith('image/') && watermarkText) {
             const image = await jimp.read(buffer);
             const font = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
             image.print(font, 10, image.bitmap.height - 40, watermarkText);
             buffer = await image.getBufferAsync(jimp.MIME_PNG);
+            finalContentType = 'image/png';
         }
 
         const hash = crypto.createHash('md5').update(buffer).digest('hex');
@@ -171,54 +618,45 @@ router.post('/upload', async (req, res) => {
             }
         }
 
-        let finalAlias = customAlias || filename;
-        finalAlias = finalAlias.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const finalAlias = await ensureUniqueAlias(customAlias || cleanFilename, cleanFilename);
 
-        let counter = 1;
-        while (await File.findOne({ customAlias: finalAlias })) {
-            const ext = path.extname(filename);
-            const name = path.basename(filename, ext).replace(/[^a-zA-Z0-9._-]/g, '_');
-            finalAlias = `${name}_${counter}${ext}`;
-            counter++;
+        let allowedGeo;
+        if (geo) {
+            try {
+                allowedGeo = typeof geo === 'string' ? JSON.parse(geo) : geo;
+            } catch (e) {
+                return res.status(400).json({ message: 'Invalid geo restriction payload.' });
+            }
         }
-        
-        const r2Key = `${ownerId.toString()}/${Date.now()}_${crypto.randomUUID()}_${finalAlias}`;
 
-        const uploadCommand = new PutObjectCommand({
-            Bucket: 'wanzofc',
-            Key: r2Key,
-            Body: buffer,
-            ContentType: contentType
-        });
-        
-        await r2.send(uploadCommand);
+        const r2Key = await uploadBufferToR2(ownerId, finalAlias, buffer, finalContentType);
 
         const newFile = new File({
-            originalName: filename,
+            originalName: cleanFilename,
             customAlias: finalAlias,
-            contentType,
+            contentType: finalContentType,
             size: buffer.length,
             storageType: 'r2',
             r2Key: r2Key,
             owner: ownerId !== 'guest' ? ownerId : null,
             parentId: parentId || null,
             description,
-            tags: tags ? tags.split(',').map(t => t.trim()) : [],
-            isHidden: hidden === 'true',
+            tags: sanitizeTagList(tags),
+            isHidden: isTruthy(hidden),
             md5Hash: hash,
             sha256Hash: sha256,
-            isBurnAfterRead: burn === 'true',
+            isBurnAfterRead: isTruthy(burn),
             passwordHint: hint,
-            allowedGeo: geo ? JSON.parse(geo) : undefined,
-            expiresAt: expires ? new Date(Date.now() + expires * 3600000) : undefined,
-            downloadLimit: limit ? parseInt(limit) : undefined
+            allowedGeo,
+            expiresAt: expires ? new Date(Date.now() + Number(expires) * 3600000) : undefined,
+            downloadLimit: limit ? parseInt(limit, 10) : undefined
         });
 
         if (password) {
             newFile.password = await bcrypt.hash(password, 10);
         }
 
-        await newFile.save();
+        await saveFileWithUniqueAlias(newFile, cleanFilename);
 
         if (user) {
             triggerWebhook(user, 'file.uploaded', {
@@ -243,40 +681,49 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
     try {
         const { url, parentId } = req.body;
         const response = await axios.get(url, { responseType: 'arraybuffer' });
-        const contentType = response.headers['content-type'];
+        const contentType = response.headers['content-type'] || 'application/octet-stream';
         const buffer = Buffer.from(response.data, 'binary');
         
         if (!validateMagicBytes(buffer, contentType)) {
             return res.status(400).json({ message: 'Remote file type validation failed.' });
         }
 
-        const base64 = `data:${contentType};base64,${buffer.toString('base64')}`;
         let filename = path.basename(url) || `remote_${Date.now()}`;
         filename = sanitizeFilename(filename);
+        const alias = await ensureUniqueAlias(`remote_${Date.now()}_${filename}`, filename);
+
+        const r2Key = await uploadBufferToR2(req.user.id, alias, buffer, contentType);
         
         const newFile = new File({
             originalName: filename,
-            customAlias: `remote_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+            customAlias: alias,
             contentType,
             size: buffer.length,
-            base64,
+            storageType: 'r2',
+            r2Key,
             owner: req.user.id,
             parentId: parentId || null,
             md5Hash: crypto.createHash('md5').update(buffer).digest('hex'),
             sha256Hash: crypto.createHash('sha256').update(buffer).digest('hex')
         });
-        await newFile.save();
-        res.status(201).json({ message: 'Remote upload success' });
+        await saveFileWithUniqueAlias(newFile, filename);
+        res.status(201).json({ message: 'Remote upload success', file: newFile });
     } catch (error) {
         res.status(500).json({ message: 'Remote upload failed' });
     }
 });
 
 router.post('/upload/chunk/init', auth.protectApi, async (req, res) => {
-    const { filename, totalSize } = req.body;
+    const { filename, totalSize, contentType } = req.body;
     const cleanName = sanitizeFilename(filename);
     const sessionId = crypto.randomBytes(16).toString('hex');
-    const session = new UploadSession({ sessionId, owner: req.user.id, filename: cleanName, totalSize });
+    const session = new UploadSession({
+        sessionId,
+        owner: req.user.id,
+        filename: cleanName,
+        contentType: contentType || 'application/octet-stream',
+        totalSize
+    });
     await session.save();
     res.json({ sessionId });
 });
@@ -300,27 +747,29 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
     const fullBase64 = session.chunks.map(c => c.data.split(',')[1]).join('');
     
     const buffer = Buffer.from(fullBase64, 'base64');
-    if (!validateMagicBytes(buffer, 'application/octet-stream')) { 
+    const resolvedContentType = session.contentType || 'application/octet-stream';
+    if (!validateMagicBytes(buffer, resolvedContentType)) { 
          await UploadSession.deleteOne({ _id: session._id });
          return res.status(400).json({ message: 'File rejected due to security policy.' });
     }
-
-    const finalBase64 = `data:application/octet-stream;base64,${fullBase64}`;
     const fileSize = (fullBase64.length * (3/4)); 
+    const alias = await ensureUniqueAlias(`chunk_${Date.now()}_${sanitizeFilename(session.filename)}`, session.filename);
+    const r2Key = await uploadBufferToR2(req.user.id, alias, buffer, resolvedContentType);
 
     const newFile = new File({
         originalName: sanitizeFilename(session.filename),
-        customAlias: `chunk_${Date.now()}_${sanitizeFilename(session.filename)}`,
-        contentType: 'application/octet-stream', 
+        customAlias: alias,
+        contentType: resolvedContentType, 
         size: fileSize,
-        base64: finalBase64,
+        storageType: 'r2',
+        r2Key,
         owner: req.user.id,
         parentId: parentId || null,
         md5Hash: crypto.createHash('md5').update(buffer).digest('hex'),
         sha256Hash: crypto.createHash('sha256').update(buffer).digest('hex')
     });
 
-    await newFile.save();
+    await saveFileWithUniqueAlias(newFile, session.filename);
     await UploadSession.deleteOne({ _id: session._id });
     res.status(201).json({ message: 'File assembled successfully' });
 });
@@ -440,8 +889,8 @@ router.post('/files/:id/email-share', auth.protectApi, async (req, res) => {
     if (!file) return res.status(404).json({ message: 'File not found' });
     
     const existingUser = await User.findOne({ email });
-    if (existingUser && !file.collaborators.includes(existingUser._id)) {
-        file.collaborators.push(existingUser._id);
+    if (existingUser && !file.collaborators.some(collab => collab.user && collab.user.equals(existingUser._id))) {
+        file.collaborators.push({ user: existingUser._id, role: 'viewer' });
         await file.save();
     }
 
@@ -474,7 +923,7 @@ router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
         const folderId = req.params.id;
         const folder = await File.findOne({ 
             _id: folderId, 
-            $or: [{ owner: req.user.id }, { collaborators: req.user.id }] 
+            $or: [{ owner: req.user.id }, { 'collaborators.user': req.user.id }] 
         });
 
         if (!folder || !folder.isFolder) return res.status(404).send('Folder not found or access denied');
@@ -487,7 +936,10 @@ router.get('/files/:id/zip', auth.protectApi, async (req, res) => {
         archive.pipe(res);
 
         for (const file of files) {
-            if (file.base64) {
+            if (file.storageType === 'r2' && file.r2Key) {
+                const buffer = await getR2ObjectBuffer(file.r2Key);
+                archive.append(buffer, { name: file.originalName });
+            } else if (file.base64) {
                 const base64Data = file.base64.split(';base64,').pop();
                 const buffer = Buffer.from(base64Data, 'base64');
                 archive.append(buffer, { name: file.originalName });
@@ -508,7 +960,7 @@ router.post('/files/zip', auth.protectApi, async (req, res) => {
 
         const files = await File.find({ 
             _id: { $in: fileIds }, 
-            $or: [{ owner: req.user.id }, { collaborators: req.user.id }],
+            $or: [{ owner: req.user.id }, { 'collaborators.user': req.user.id }],
             isFolder: false 
         });
 
@@ -518,7 +970,10 @@ router.post('/files/zip', auth.protectApi, async (req, res) => {
         archive.pipe(res);
 
         for (const file of files) {
-            if (file.base64) {
+            if (file.storageType === 'r2' && file.r2Key) {
+                const buffer = await getR2ObjectBuffer(file.r2Key);
+                archive.append(buffer, { name: file.originalName });
+            } else if (file.base64) {
                 const base64Data = file.base64.split(';base64,').pop();
                 const buffer = Buffer.from(base64Data, 'base64');
                 archive.append(buffer, { name: file.originalName });
@@ -734,7 +1189,9 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
     if (!reqItem) return res.status(404).json({ message: 'Request not found' });
     reqItem.status = status;
     
-    if (status === 'approved') file.collaborators.push(reqItem.user);
+    if (status === 'approved' && !file.collaborators.some(collab => collab.user && collab.user.equals(reqItem.user))) {
+        file.collaborators.push({ user: reqItem.user, role: 'viewer' });
+    }
     await file.save();
     res.json({ message: `Request ${status}` });
 });
@@ -844,7 +1301,10 @@ router.post('/files/:id/import', auth.protectApi, async (req, res) => {
         const originalFile = await File.findOne({ _id: req.params.id });
         if (!originalFile || originalFile.deletedAt) return res.status(404).json({ message: 'File not found' });
 
-        const newAlias = `${path.basename(originalFile.originalName, path.extname(originalFile.originalName))}_imported_${Date.now()}${path.extname(originalFile.originalName)}`;
+        const newAlias = await ensureUniqueAlias(
+            `${path.basename(originalFile.originalName, path.extname(originalFile.originalName))}_imported_${Date.now()}${path.extname(originalFile.originalName)}`,
+            originalFile.originalName
+        );
         
         const newFile = new File({
             originalName: originalFile.originalName,
@@ -852,13 +1312,15 @@ router.post('/files/:id/import', auth.protectApi, async (req, res) => {
             contentType: originalFile.contentType,
             size: originalFile.size,
             base64: originalFile.base64,
+            storageType: originalFile.storageType,
+            r2Key: originalFile.r2Key,
             owner: req.user.id,
             md5Hash: originalFile.md5Hash,
             sha256Hash: originalFile.sha256Hash,
             virusScan: originalFile.virusScan
         });
 
-        await newFile.save();
+        await saveFileWithUniqueAlias(newFile, originalFile.originalName);
         res.status(201).json({ message: 'File saved to your account successfully.', url: `/w-upload/file/${newAlias}` });
     } catch (error) {
         res.status(500).json({ message: 'Import failed.' });
@@ -882,13 +1344,23 @@ router.post('/files/:id/scan', async (req, res) => {
     try {
         const file = await File.findById(req.params.id);
         if (!file) return res.status(404).json({ message: 'File not found' });
+        if (!file.virusScan) {
+            file.virusScan = { status: 'unscanned' };
+        }
 
         if (file.virusScan.status === 'clean' || file.virusScan.status === 'infected') {
             return res.json({ status: file.virusScan.status, permalink: file.virusScan.permalink });
         }
 
         if (!file.sha256Hash) {
-            const buffer = Buffer.from(file.base64.split(',')[1], 'base64');
+            let buffer;
+            if (file.storageType === 'r2' && file.r2Key) {
+                buffer = await getR2ObjectBuffer(file.r2Key);
+            } else if (file.base64) {
+                buffer = Buffer.from(file.base64.split(',')[1], 'base64');
+            } else {
+                return res.status(400).json({ message: 'File content unavailable for scanning.' });
+            }
             file.sha256Hash = crypto.createHash('sha256').update(buffer).digest('hex');
             await file.save();
         }
@@ -1031,13 +1503,7 @@ router.post('/files/:id/ocr', auth.protectApi, async (req, res) => {
             return res.status(400).json({ message: 'File is not stored in a processable location.' });
         }
 
-        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
-        const buffer = await new Promise((resolve, reject) => {
-            const chunks = [];
-            Body.on('data', chunk => chunks.push(chunk));
-            Body.on('error', reject);
-            Body.on('end', () => resolve(Buffer.concat(chunks)));
-        });
+        const buffer = await getR2ObjectBuffer(file.r2Key);
 
         const { data: { text } } = await Tesseract.recognize(buffer, 'eng');
         res.json({ text });
@@ -1053,41 +1519,41 @@ router.post('/files/:id/convert', auth.protectApi, async (req, res) => {
         const file = await File.findById(req.params.id);
         if (!file) return res.status(404).json({ message: 'File not found.' });
         if (file.storageType !== 'r2') return res.status(400).json({ message: 'File not processable.' });
-
-        const tempFilePath = path.join(__dirname, '..', 'temp', file.r2Key.split('/').pop());
-        const outputFilePath = `${tempFilePath}.${toFormat}`;
-        
-        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
-        await require('fs').promises.writeFile(tempFilePath, Body);
+        const targetFormat = String(toFormat || '').toLowerCase();
+        const inputBuffer = await getR2ObjectBuffer(file.r2Key);
 
         let outputBuffer;
         let newContentType;
+        const tempDir = path.join(__dirname, '..', 'temp');
+        const tempFilePath = path.join(tempDir, file.r2Key.split('/').pop());
+        const outputFilePath = `${tempFilePath}.${targetFormat}`;
 
-        if (file.contentType.includes('docx') && toFormat === 'pdf') {
+        if (file.contentType.includes('docx') && targetFormat === 'pdf') {
+            await fs.promises.mkdir(tempDir, { recursive: true });
+            await fs.promises.writeFile(tempFilePath, inputBuffer);
             await new Promise((resolve, reject) => {
                 docxConverter(tempFilePath, outputFilePath, (err, result) => {
                     if (err) return reject(err);
                     resolve(result);
                 });
             });
-            outputBuffer = await require('fs').promises.readFile(outputFilePath);
+            outputBuffer = await fs.promises.readFile(outputFilePath);
             newContentType = 'application/pdf';
-        } else if (file.contentType.startsWith('image/') && toFormat === 'jpg') {
-            outputBuffer = await sharp(tempFilePath).jpeg().toBuffer();
-            newContentType = 'image/jpeg';
+        } else if (file.contentType.startsWith('image/') && ['jpg', 'jpeg', 'png', 'webp'].includes(targetFormat)) {
+            const transformer = sharp(inputBuffer);
+            if (targetFormat === 'png') outputBuffer = await transformer.png().toBuffer();
+            else if (targetFormat === 'webp') outputBuffer = await transformer.webp().toBuffer();
+            else outputBuffer = await transformer.jpeg().toBuffer();
+            newContentType = targetFormat === 'png' ? 'image/png' : targetFormat === 'webp' ? 'image/webp' : 'image/jpeg';
         } else {
             return res.status(400).json({ message: 'Conversion not supported.' });
         }
 
-        const finalAlias = `${path.basename(file.originalName, path.extname(file.originalName))}_converted.${toFormat}`;
-        const r2Key = `${req.user.id}/${Date.now()}_${finalAlias}`;
-        
-        await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: r2Key,
-            Body: outputBuffer,
-            ContentType: newContentType
-        }));
+        const finalAlias = await ensureUniqueAlias(
+            `${path.basename(file.originalName, path.extname(file.originalName))}_converted.${targetFormat}`,
+            `${path.basename(file.originalName, path.extname(file.originalName))}.${targetFormat}`
+        );
+        const r2Key = await uploadBufferToR2(req.user.id, finalAlias, outputBuffer, newContentType);
 
         const newFile = new File({
             originalName: finalAlias,
@@ -1099,7 +1565,9 @@ router.post('/files/:id/convert', auth.protectApi, async (req, res) => {
             owner: req.user.id,
             parentId: file.parentId
         });
-        await newFile.save();
+        await saveFileWithUniqueAlias(newFile, finalAlias);
+        await fs.promises.rm(tempFilePath, { force: true }).catch(() => {});
+        await fs.promises.rm(outputFilePath, { force: true }).catch(() => {});
         
         triggerWebhook(req.user, 'file.converted', { originalFileId: file._id, newFileId: newFile._id, newFileAlias: newFile.customAlias });
         res.status(201).json({ message: 'File converted successfully.', newFile });
@@ -1138,17 +1606,17 @@ router.post('/files/:id/extract', async (req, res) => {
         if (user) {
             parentFolder = new File({
                 originalName: newFolderName,
-                customAlias: `${newFolderName}_${Date.now()}`,
+                customAlias: await ensureUniqueAlias(`${newFolderName}_${Date.now()}`, newFolderName),
                 isFolder: true,
                 contentType: 'application/vnd.google-apps.folder',
                 owner: ownerId,
                 parentId: parentId,
                 size: 0
             });
-            await parentFolder.save();
+            await saveFileWithUniqueAlias(parentFolder, newFolderName);
         }
 
-        const { Body } = await r2.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: file.r2Key }));
+        const { Body } = await r2.send(new GetObjectCommand({ Bucket: getBucketName(), Key: file.r2Key }));
         
         const extractedFiles = [];
         const stream = Body.pipe(unzipper.Parse({ forceStream: true }));
@@ -1157,11 +1625,11 @@ router.post('/files/:id/extract', async (req, res) => {
             const buffer = await entry.buffer();
             if (entry.type === 'Directory') continue; // Lewati direktori
 
-            const finalAlias = `${Date.now()}_${entry.path.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            const finalAlias = await ensureUniqueAlias(`${Date.now()}_${entry.path.replace(/[^a-zA-Z0-9._-]/g, '_')}`, entry.path);
             const r2Key = `${ownerId}/${finalAlias}`;
             
             await r2.send(new PutObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME, Key: r2Key, Body: buffer, ContentType: 'application/octet-stream'
+                Bucket: getBucketName(), Key: r2Key, Body: buffer, ContentType: 'application/octet-stream'
             }));
 
             const newFile = new File({
@@ -1174,7 +1642,7 @@ router.post('/files/:id/extract', async (req, res) => {
                 owner: user ? ownerId : null, // Hanya set owner jika user login
                 parentId: parentFolder ? parentFolder._id : null // Hanya set parent jika folder dibuat
             });
-            await newFile.save();
+            await saveFileWithUniqueAlias(newFile, entry.path);
             extractedFiles.push(newFile);
         }
 
@@ -1212,7 +1680,7 @@ router.post('/files/:id/save-version', auth.protectApi, async (req, res) => {
         const newR2Key = `${req.user.id}/${Date.now()}_v${file.versions.length + 2}_${file.originalName}`;
         
         await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
+            Bucket: getBucketName(),
             Key: newR2Key,
             Body: buffer,
             ContentType: file.contentType

@@ -7,32 +7,249 @@
     const root = document.documentElement;
     const menuToggle = document.getElementById('mobileMenuToggle');
     const navMenu = document.getElementById('navMenu');
+    const languageSwitcher = document.getElementById('languageSwitcher');
+    const availableLanguages = <%- JSON.stringify(availableLanguages || []) %>;
+
+    const translationState = {
+        language: localStorage.getItem('ui-language') || 'original',
+        sourceLanguage: 'auto',
+        processing: false,
+        suspendObserver: false,
+        observer: null
+    };
+
+    const translateableSelectors = 'input[placeholder], textarea[placeholder], [title], [aria-label], input[type="button"], input[type="submit"], option';
 
     function initializeTheme() {
         const savedTheme = localStorage.getItem('theme') || 'light';
         root.setAttribute('data-theme', savedTheme);
-        updateIcon(savedTheme);
+        updateThemeIcon(savedTheme);
     }
 
-    function updateIcon(theme) {
-        if (themeBtn) {
-            const icon = themeBtn.querySelector('i');
-            if (theme === 'dark') {
-                icon.className = 'fa-solid fa-sun';
-            } else {
-                icon.className = 'fa-solid fa-moon';
+    function updateThemeIcon(theme) {
+        if (!themeBtn) return;
+        const icon = themeBtn.querySelector('i');
+        icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        themeBtn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        themeBtn.setAttribute('title', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    }
+
+    function normalizeText(text) {
+        return (text || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function shouldTranslateText(text) {
+        const normalized = normalizeText(text);
+        if (!normalized) return false;
+        if (normalized.length < 2) return false;
+        if (/^[\d\s\-–—_:/.]+$/.test(normalized)) return false;
+        return true;
+    }
+
+    function hasNoTranslateParent(node) {
+        let current = node.parentElement;
+        while (current) {
+            if (
+                current.matches('[data-no-translate], script, style, code, pre, textarea, noscript, svg') ||
+                current.isContentEditable
+            ) {
+                return true;
             }
+            current = current.parentElement;
         }
+        return false;
+    }
+
+    function collectTextNodes(scope = document.body) {
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+                if (hasNoTranslateParent(node)) return NodeFilter.FILTER_REJECT;
+                if (!shouldTranslateText(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+
+        const nodes = [];
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (!node.__originalText) {
+                node.__originalText = node.nodeValue;
+            }
+            nodes.push(node);
+        }
+        return nodes;
+    }
+
+    function collectAttributeEntries(scope = document.body) {
+        const entries = [];
+        scope.querySelectorAll(translateableSelectors).forEach(element => {
+            if (element.closest('[data-no-translate]')) return;
+
+            ['placeholder', 'title', 'aria-label', 'value'].forEach(attr => {
+                if ((attr === 'value') && !['button', 'submit'].includes((element.type || '').toLowerCase())) return;
+                const currentValue = element.getAttribute(attr);
+                if (!shouldTranslateText(currentValue)) return;
+
+                const originalKey = `original${attr.charAt(0).toUpperCase()}${attr.slice(1)}`;
+                if (!element.dataset[originalKey]) {
+                    element.dataset[originalKey] = currentValue;
+                }
+                entries.push({ element, attr, text: element.dataset[originalKey] });
+            });
+
+            if (element.tagName === 'OPTION') {
+                const optionText = element.dataset.originalText || element.textContent;
+                if (!shouldTranslateText(optionText)) return;
+                element.dataset.originalText = optionText;
+                entries.push({ element, attr: 'textContent', text: optionText });
+            }
+        });
+
+        return entries;
+    }
+
+    function restoreOriginalLanguage(scope = document.body) {
+        collectTextNodes(scope).forEach(node => {
+            if (node.__originalText) {
+                node.nodeValue = node.__originalText;
+            }
+        });
+
+        scope.querySelectorAll(translateableSelectors).forEach(element => {
+            if (element.dataset.originalPlaceholder) element.setAttribute('placeholder', element.dataset.originalPlaceholder);
+            if (element.dataset.originalTitle) element.setAttribute('title', element.dataset.originalTitle);
+            if (element.dataset.originalAriaLabel) element.setAttribute('aria-label', element.dataset.originalAriaLabel);
+            if (element.dataset.originalValue && ['button', 'submit'].includes((element.type || '').toLowerCase())) {
+                element.setAttribute('value', element.dataset.originalValue);
+            }
+            if (element.tagName === 'OPTION' && element.dataset.originalText) {
+                element.textContent = element.dataset.originalText;
+            }
+        });
+
+        if (document.title && window.__originalDocumentTitle) {
+            document.title = window.__originalDocumentTitle;
+        }
+    }
+
+    async function requestTranslations(texts, targetLang) {
+        const response = await fetch('/api/i18n/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                texts,
+                targetLang,
+                sourceLang: translationState.sourceLanguage
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || 'Translation request failed.');
+        }
+        return data.translations || texts;
+    }
+
+    async function translateDocument(scope = document.body) {
+        if (translationState.processing) return;
+        if (translationState.language === 'original') {
+            restoreOriginalLanguage(scope);
+            return;
+        }
+
+        translationState.processing = true;
+        translationState.suspendObserver = true;
+
+        try {
+            restoreOriginalLanguage(scope);
+
+            const textNodes = collectTextNodes(scope);
+            const attributeEntries = collectAttributeEntries(scope);
+            const titleSource = window.__originalDocumentTitle || document.title;
+
+            const uniqueTexts = [...new Set([
+                ...textNodes.map(node => normalizeText(node.__originalText)),
+                ...attributeEntries.map(entry => normalizeText(entry.text)),
+                shouldTranslateText(titleSource) ? normalizeText(titleSource) : null
+            ].filter(Boolean))];
+
+            if (!uniqueTexts.length) return;
+
+            const translationMap = new Map();
+            const chunkSize = 50;
+            for (let index = 0; index < uniqueTexts.length; index += chunkSize) {
+                const chunk = uniqueTexts.slice(index, index + chunkSize);
+                const translatedChunk = await requestTranslations(chunk, translationState.language);
+                chunk.forEach((source, offset) => translationMap.set(source, translatedChunk[offset] || source));
+            }
+
+            textNodes.forEach(node => {
+                const translated = translationMap.get(normalizeText(node.__originalText));
+                if (translated) {
+                    node.nodeValue = translated;
+                }
+            });
+
+            attributeEntries.forEach(entry => {
+                const translated = translationMap.get(normalizeText(entry.text));
+                if (!translated) return;
+
+                if (entry.attr === 'textContent') entry.element.textContent = translated;
+                else entry.element.setAttribute(entry.attr, translated);
+            });
+
+            const translatedTitle = translationMap.get(normalizeText(titleSource));
+            if (translatedTitle) document.title = translatedTitle;
+        } catch (error) {
+            console.error('Global page translation error:', error);
+            showToast('Translation failed for this page.', 'error');
+        } finally {
+            translationState.processing = false;
+            setTimeout(() => {
+                translationState.suspendObserver = false;
+            }, 60);
+        }
+    }
+
+    function initializeLanguageSwitcher() {
+        window.__originalDocumentTitle = document.title;
+        if (!languageSwitcher) return;
+
+        const validCodes = new Set(['original', ...availableLanguages.map(language => language.code)]);
+        if (!validCodes.has(translationState.language)) {
+            translationState.language = 'original';
+        }
+
+        languageSwitcher.value = translationState.language;
+        languageSwitcher.addEventListener('change', async () => {
+            translationState.language = languageSwitcher.value;
+            localStorage.setItem('ui-language', translationState.language);
+            await translateDocument(document.body);
+        });
+
+        translateDocument(document.body);
+
+        translationState.observer = new MutationObserver(() => {
+            if (translationState.language === 'original' || translationState.processing || translationState.suspendObserver) return;
+            clearTimeout(window.__translationObserverTimer);
+            window.__translationObserverTimer = setTimeout(() => translateDocument(document.body), 250);
+        });
+
+        translationState.observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
     if (themeBtn) {
         themeBtn.addEventListener('click', () => {
             const currentTheme = root.getAttribute('data-theme');
             const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
+
             root.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
-            updateIcon(newTheme);
+            updateThemeIcon(newTheme);
         });
     }
 
@@ -40,30 +257,41 @@
         menuToggle.addEventListener('click', () => {
             navMenu.classList.toggle('active');
             const icon = menuToggle.querySelector('i');
-            if (navMenu.classList.contains('active')) {
-                icon.className = 'fa-solid fa-times';
-            } else {
-                icon.className = 'fa-solid fa-bars';
-            }
+            icon.className = navMenu.classList.contains('active') ? 'fa-solid fa-times' : 'fa-solid fa-bars';
         });
     }
 
     initializeTheme();
+    initializeLanguageSwitcher();
 
-    function showToast(message, type = 'success') {
+    async function translateUiString(message) {
+        if (!message || translationState.language === 'original') return message;
+        try {
+            const translations = await requestTranslations([message], translationState.language);
+            return translations[0] || message;
+        } catch (error) {
+            return message;
+        }
+    }
+
+    async function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
         if (!container) return;
+
+        const translatedMessage = await translateUiString(message);
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
+        toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'warning' ? 'fa-triangle-exclamation' : 'fa-exclamation-circle'}"></i> <span>${translatedMessage}</span>`;
         container.appendChild(toast);
-        setTimeout(() => toast.remove(), 4000);
+        setTimeout(() => toast.remove(), 4200);
     }
+
+    window.showToast = showToast;
 
     const originalFetch = window.fetch;
     window.fetch = async function (url, options = {}) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        
+
         if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
             if (!options.headers) options.headers = {};
             if (options.headers instanceof Headers) {
@@ -84,7 +312,7 @@
     const originalSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function(body) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        if (csrfToken && this._method && ['POST', 'PUT', 'DELETE'].includes(this._method.toUpperCase())) {
+        if (csrfToken && this._method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(this._method.toUpperCase())) {
             this.setRequestHeader('X-CSRF-Token', csrfToken);
         }
         return originalSend.apply(this, arguments);

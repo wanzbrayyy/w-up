@@ -1,6 +1,49 @@
 const axios = require('axios');
 const translationCache = new Map();
 
+const languages = [
+    { code: 'id', name: 'Indonesian' },
+    { code: 'en', name: 'English' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'ja', name: 'Japanese' },
+    { code: 'fr', name: 'French' },
+    { code: 'de', name: 'German' },
+    { code: 'ru', name: 'Russian' },
+    { code: 'zh-cn', name: 'Chinese' },
+    { code: 'ko', name: 'Korean' },
+    { code: 'ar', name: 'Arabic' },
+    { code: 'pt', name: 'Portuguese' },
+    { code: 'it', name: 'Italian' },
+    { code: 'nl', name: 'Dutch' },
+    { code: 'sv', name: 'Swedish' },
+    { code: 'pl', name: 'Polish' },
+    { code: 'tr', name: 'Turkish' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'th', name: 'Thai' },
+    { code: 'vi', name: 'Vietnamese' },
+    { code: 'ms', name: 'Malay' },
+    { code: 'bn', name: 'Bengali' },
+    { code: 'fa', name: 'Persian' },
+    { code: 'ur', name: 'Urdu' },
+    { code: 'he', name: 'Hebrew' },
+    { code: 'el', name: 'Greek' },
+    { code: 'hu', name: 'Hungarian' },
+    { code: 'cs', name: 'Czech' },
+    { code: 'ro', name: 'Romanian' },
+    { code: 'bg', name: 'Bulgarian' },
+    { code: 'uk', name: 'Ukrainian' },
+    { code: 'sr', name: 'Serbian' },
+    { code: 'hr', name: 'Croatian' },
+    { code: 'sk', name: 'Slovak' },
+    { code: 'da', name: 'Danish' },
+    { code: 'no', name: 'Norwegian' },
+    { code: 'fi', name: 'Finnish' },
+    { code: 'et', name: 'Estonian' },
+    { code: 'lv', name: 'Latvian' },
+    { code: 'lt', name: 'Lithuanian' },
+    { code: 'sl', name: 'Slovenian' }
+];
+
 async function translateText(text, targetLang, sourceLang = 'auto') {
     if (!text) return '';
     
@@ -32,4 +75,9 @@ async function translateText(text, targetLang, sourceLang = 'auto') {
     }
 }
 
-module.exports = { translateText };
+async function translateBatch(texts, targetLang, sourceLang = 'auto') {
+    if (!Array.isArray(texts) || !texts.length) return [];
+    return Promise.all(texts.map(text => translateText(text, targetLang, sourceLang)));
+}
+
+module.exports = { translateText, translateBatch, languages };

@@ -4,8 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= csrfToken %>">
-    
+    <meta name="color-scheme" content="light dark">
+
     <title><%= typeof title !== 'undefined' ? `${title} - w upload` : 'w upload' %></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/public/css/main.css">
     <% if (typeof pageCss !== 'undefined') { %>
@@ -13,60 +17,106 @@
     <% } %>
 </head>
 <body>
+    <div class="site-bg-orb orb-one"></div>
+    <div class="site-bg-orb orb-two"></div>
+
     <% if (locals.systemConfig && locals.systemConfig.globalAnnouncement) { %>
-        <div class="announcement-bar" style="background:#f59e0b; color:black; text-align:center; padding:0.5rem; font-weight:bold;">
-            <i class="fa-solid fa-bullhorn"></i> <%= locals.systemConfig.globalAnnouncement %>
+        <div class="announcement-bar">
+            <i class="fa-solid fa-bullhorn"></i>
+            <span data-i18n="true"><%= locals.systemConfig.globalAnnouncement %></span>
         </div>
     <% } %>
 
     <div class="toast-container" id="toastContainer"></div>
-    
+
     <nav class="navbar">
-        <a href="/" class="logo">w upload</a>
+        <div class="nav-shell">
+            <a href="/" class="logo" data-no-translate="true">
+                <span class="logo-mark">W</span>
+                <span class="logo-text">
+                    <strong>w upload</strong>
+                    <small>Cloud workspace</small>
+                </span>
+            </a>
 
-        <div class="nav-right">
-            <div class="nav-menu" id="navMenu">
-                <% if (locals.isLoggedIn && locals.user) { %>
-                    <span class="nav-item welcome-text" style="cursor: default; background: none;">
-                        Welcome, <%= user.username %>
-                        <% if (user.isVerified) { %> <i class="fa-solid fa-circle-check" style="color:#3b82f6;" title="Verified"></i> <% } %>
-                        <% if (user.plan === 'pro') { %> <span class="badge" style="background:gold; color:black; font-size:0.7rem; padding:2px 5px; border-radius:4px;">PRO</span> <% } %>
-                    </span>
-                    
-                    <% if (user.role === 'admin') { %>
-                        <a href="/admin" class="nav-item" style="color:#ef4444;"><i class="fa-solid fa-shield-halved"></i> Admin</a>
+            <div class="nav-right">
+                <div class="nav-menu" id="navMenu">
+                    <% if (locals.isLoggedIn && locals.user) { %>
+                        <div class="nav-account-chip" data-no-translate="true">
+                            <span class="nav-account-avatar"><%= user.username.slice(0, 1).toUpperCase() %></span>
+                            <div class="nav-account-meta">
+                                <strong><%= user.username %></strong>
+                                <small>
+                                    <%= user.plan === 'pro' ? 'PRO Member' : 'Free Plan' %>
+                                    <% if (user.isVerified) { %> | Verified <% } %>
+                                </small>
+                            </div>
+                        </div>
+
+                        <% if (user.role === 'admin') { %>
+                            <a href="/admin" class="nav-item danger <%= locals.currentUrl && locals.currentUrl.startsWith('/admin') ? 'active' : '' %>">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <span data-i18n="true">Admin</span>
+                            </a>
+                        <% } %>
+
+                        <a href="/dashboard" class="nav-item <%= locals.currentUrl && locals.currentUrl.startsWith('/dashboard') ? 'active' : '' %>">
+                            <i class="fa-solid fa-table-columns"></i>
+                            <span data-i18n="true">Dashboard</span>
+                        </a>
+                        <a href="/profile" class="nav-item <%= locals.currentUrl === '/profile' ? 'active' : '' %>">
+                            <i class="fa-solid fa-user-cog"></i>
+                            <span data-i18n="true">Profile</span>
+                        </a>
+                        <a href="/logout" class="nav-item">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                            <span data-i18n="true">Logout</span>
+                        </a>
+                    <% } else { %>
+                        <a href="/docs" class="nav-item <%= locals.currentUrl === '/docs' ? 'active' : '' %>">
+                            <i class="fa-solid fa-book"></i>
+                            <span data-i18n="true">API Docs</span>
+                        </a>
+                        <a href="/request" class="nav-item <%= locals.currentUrl && locals.currentUrl.startsWith('/request') ? 'active' : '' %>">
+                            <i class="fa-solid fa-sparkles"></i>
+                            <span data-i18n="true">Request</span>
+                        </a>
+                        <a href="/login" class="nav-item <%= locals.currentUrl === '/login' ? 'active' : '' %>">
+                            <i class="fa-solid fa-right-to-bracket"></i>
+                            <span data-i18n="true">Login</span>
+                        </a>
+                        <a href="/register" class="nav-item primary <%= locals.currentUrl === '/register' ? 'active' : '' %>">
+                            <i class="fa-solid fa-user-plus"></i>
+                            <span data-i18n="true">Sign Up</span>
+                        </a>
                     <% } %>
+                </div>
 
-                    <a href="/dashboard" class="nav-item">
-                        <i class="fa-solid fa-table-columns"></i> Dashboard
-                    </a>
-                    <a href="/profile" class="nav-item">
-                        <i class="fa-solid fa-user-cog"></i> Profile
-                    </a>
-                    <a href="/logout" class="nav-item">
-                        <i class="fa-solid fa-right-from-bracket"></i> Logout
-                    </a>
-                <% } else { %>
-                    <a href="/docs" class="nav-item">
-                        <i class="fa-solid fa-book"></i> API Docs
-                    </a>
-                    <a href="/login" class="nav-item">Login</a>
-                    <a href="/register" class="nav-item primary">Sign Up</a>
-                <% } %>
+                <div class="nav-controls" data-no-translate="true">
+                    <label class="language-select-wrap" for="languageSwitcher">
+                        <i class="fa-solid fa-language"></i>
+                        <select id="languageSwitcher" class="language-select">
+                            <option value="original">Original</option>
+                            <% (availableLanguages || []).forEach(language => { %>
+                                <option value="<%= language.code %>"><%= language.name %></option>
+                            <% }) %>
+                        </select>
+                    </label>
+
+                    <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Toggle theme" title="Toggle theme">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                    <button class="mobile-menu-toggle" id="mobileMenuToggle" type="button" aria-label="Open menu" title="Open menu">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                </div>
             </div>
-
-            <button class="theme-toggle" id="themeToggleBtn">
-                <i class="fa-solid fa-moon"></i>
-            </button>
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">
-                <i class="fa-solid fa-bars"></i>
-            </button>
         </div>
     </nav>
 
     <% if (locals.systemConfig && locals.systemConfig.adsEnabled && (!locals.user || locals.user.plan === 'free')) { %>
-        <div class="ad-container" style="text-align:center; padding:1rem; background:var(--bg-secondary);">
-            <small>Advertisement</small>
+        <div class="ad-container">
+            <small data-i18n="true">Advertisement</small>
             <%- locals.systemConfig.adScript %>
         </div>
     <% } %>
