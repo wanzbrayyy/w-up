@@ -20,8 +20,15 @@
             <section class="profile-hero">
                 <div class="profile-hero-copy">
                     <span class="profile-hero-badge">Workspace Identity</span>
-                    <h2>@<%= user.username %> punya dashboard profil yang lebih rapi, referral yang bisa dibagikan, dan kontrol keamanan yang lengkap.</h2>
-                    <p>Halaman ini saya rapikan supaya branding, passkey, API key, sesi aktif, dan referral terasa lebih premium dan lebih mudah dipakai dari satu tempat.</p>
+                    <div class="quote-bubbles">
+                        <div class="quote-bubble incoming">
+                            <span class="quote-author">@<%= user.username %></span>
+                            <p>Profil sekarang lebih rapi, lebih gampang dibagikan, dan kontrol akun dikumpulkan di satu tempat.</p>
+                        </div>
+                        <div class="quote-bubble outgoing">
+                            <p>Referral, keamanan, branding, dan billing sekarang terasa seperti panel chat status yang lebih hidup.</p>
+                        </div>
+                    </div>
                     <div class="profile-hero-stats">
                         <div class="hero-stat">
                             <small>Plan</small>
@@ -59,6 +66,10 @@
                             <input type="text" class="full-input" value="<%= user.username %>" readonly disabled>
                         </div>
                         <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="accountEmail" class="full-input" placeholder="you@example.com" value="<%= user.email || '' %>">
+                        </div>
+                        <div class="form-group">
                             <label>Bio</label>
                             <textarea id="publicBio" class="full-input" rows="3" placeholder="Tell something about yourself..."><%= user.publicBio || '' %></textarea>
                         </div>
@@ -80,11 +91,20 @@
                     <div class="card-header">
                         <h3><i class="fa-solid fa-palette"></i> Page Branding (Pro)</h3>
                     </div>
-                    <div class="card-body">
+                        <div class="card-body">
                         <% if (user.plan === 'pro') { %>
                             <div class="form-group">
-                                <label>Logo URL</label>
-                                <input type="url" id="brandingLogoUrl" class="full-input" placeholder="https://..." value="<%= user.branding && user.branding.logoUrl ? user.branding.logoUrl : '' %>">
+                                <label>Logo / Photo</label>
+                                <input type="file" id="brandingLogoFile" class="full-input" accept="image/*">
+                                <small class="field-help">Pilih file gambar langsung dari perangkat. URL tidak wajib lagi.</small>
+                                <input type="hidden" id="brandingLogoUrl" value="<%= user.branding && user.branding.logoUrl ? user.branding.logoUrl : '' %>">
+                                <div class="branding-preview" id="brandingPreview">
+                                    <% if (user.branding && user.branding.logoUrl) { %>
+                                        <img src="<%= user.branding.logoUrl %>" alt="Current branding preview">
+                                    <% } else { %>
+                                        <div class="branding-preview-empty"><i class="fa-solid fa-image"></i><span>No image selected</span></div>
+                                    <% } %>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Primary Color</label>
@@ -334,6 +354,32 @@
     }
     .profile-hero h2 { margin: 0.85rem 0 0.75rem; font-size: clamp(1.8rem, 3vw, 2.5rem); line-height: 1.14; }
     .profile-hero p { margin: 0; color: rgba(255,255,255,0.76); line-height: 1.72; }
+    .quote-bubbles { display: grid; gap: 0.85rem; margin-top: 1rem; max-width: 760px; }
+    .quote-bubble {
+        position: relative;
+        padding: 0.95rem 1rem;
+        border-radius: 20px;
+        max-width: 560px;
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.16);
+        box-shadow: 0 14px 30px rgba(15,23,42,0.10);
+    }
+    .quote-bubble p { margin: 0.15rem 0 0; color: #fff; }
+    .quote-bubble.incoming { border-bottom-left-radius: 8px; }
+    .quote-bubble.outgoing {
+        justify-self: end;
+        background: rgba(249,115,22,0.20);
+        border-bottom-right-radius: 8px;
+    }
+    .quote-author {
+        display: inline-block;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.72);
+        margin-bottom: 0.2rem;
+    }
     .profile-hero-stats {
         display: flex;
         flex-wrap: wrap;
@@ -370,6 +416,7 @@
     .card-body.no-padding { padding: 0; }
     .form-group { margin-bottom: 1rem; }
     .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: var(--muted-text); }
+    .field-help { display: block; margin-top: 0.45rem; color: var(--muted-text); font-size: 0.82rem; }
     .form-actions { margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: flex-end; }
     .toggle-switch { display: flex; align-items: center; cursor: pointer; gap: 0.75rem; }
     .toggle-switch input { display: none; }
@@ -409,6 +456,26 @@
     .item-title { font-weight: 600; font-size: 0.9rem; }
     .item-meta code { font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); padding: 2px 5px; border-radius: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90%; margin-top: 4px; }
     .item-actions { display: flex; gap: 0.5rem; }
+    .branding-preview {
+        margin-top: 0.85rem;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--bg-secondary);
+        min-height: 160px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .branding-preview img { width: 100%; max-height: 260px; object-fit: cover; display: block; }
+    .branding-preview-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.65rem;
+        color: var(--muted-text);
+        padding: 1.5rem;
+    }
     @media (max-width: 900px) { .profile-hero { grid-template-columns: 1fr; } }
     @media (max-width: 768px) {
         .settings-grid { grid-template-columns: 1fr; }
@@ -476,17 +543,45 @@ document.addEventListener('DOMContentLoaded', () => {
         saveProfileBtn.addEventListener('click', async () => {
             const publicBio = document.getElementById('publicBio').value;
             const isPublicProfile = document.getElementById('publicProfileToggle').checked;
+            const email = document.getElementById('accountEmail').value.trim();
             try {
                 const res = await fetch('/api/profile/settings', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ publicBio, isPublicProfile })
+                    body: JSON.stringify({ publicBio, isPublicProfile, email })
                 });
+                const data = await res.json();
                 if(res.ok) showToast('Profile updated', 'success');
-                else showToast('Update failed', 'error');
+                else showToast(data.message || 'Update failed', 'error');
             } catch(e) {
                 showToast('Network error', 'error');
             }
+        });
+    }
+
+    const brandingLogoFile = document.getElementById('brandingLogoFile');
+    const brandingLogoUrl = document.getElementById('brandingLogoUrl');
+    const brandingPreview = document.getElementById('brandingPreview');
+
+    function renderBrandingPreview(source) {
+        if (!brandingPreview) return;
+        if (source) {
+            brandingPreview.innerHTML = `<img src="${source}" alt="Branding preview">`;
+        } else {
+            brandingPreview.innerHTML = '<div class="branding-preview-empty"><i class="fa-solid fa-image"></i><span>No image selected</span></div>';
+        }
+    }
+
+    if (brandingLogoFile) {
+        brandingLogoFile.addEventListener('change', () => {
+            const file = brandingLogoFile.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                brandingLogoUrl.value = reader.result;
+                renderBrandingPreview(reader.result);
+            };
+            reader.readAsDataURL(file);
         });
     }
 
@@ -500,7 +595,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/profile/branding', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ logoUrl, primaryColor, pageTitle })
+                    body: JSON.stringify({
+                        logoUrl: logoUrl && !logoUrl.startsWith('data:image/') ? logoUrl : '',
+                        logoBase64: logoUrl && logoUrl.startsWith('data:image/') ? logoUrl : '',
+                        primaryColor,
+                        pageTitle
+                    })
                 });
                 if(res.ok) showToast('Branding settings updated', 'success');
                 else {

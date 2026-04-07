@@ -17,7 +17,7 @@ const BrandingSchema = new mongoose.Schema({
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true },
-  email: { type: String, trim: true },
+  email: { type: String, trim: true, lowercase: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   isBanned: { type: Boolean, default: false },
   banReason: { type: String },
@@ -74,7 +74,15 @@ const UserSchema = new mongoose.Schema({
 
 UserSchema.pre('save', async function(next) {
   if (!this.referralCode) {
-    this.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    let referralCode = '';
+    let exists = true;
+
+    while (exists) {
+      referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      exists = await this.constructor.exists({ referralCode, _id: { $ne: this._id } });
+    }
+
+    this.referralCode = referralCode;
   }
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);

@@ -27,6 +27,16 @@ async function findUserByUsername(username) {
     return User.findOne({ username: { $regex: new RegExp(`^${escapeRegex(cleanUsername)}$`, 'i') } });
 }
 
+function normalizeEmail(email) {
+    return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+async function findUserByEmail(email) {
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return null;
+    return User.findOne({ email: cleanEmail });
+}
+
 function getCookieOptions(req, maxAge) {
     const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
     return {
@@ -77,16 +87,24 @@ async function createUserSession(req, res, user, locationOverride) {
 
 router.post('/register', registerLimiter, async (req, res) => {
     try {
-        const { username, password, referralCode } = req.body;
+        const { username, password, referralCode, email } = req.body;
         const cleanUsername = typeof username === 'string' ? username.trim() : '';
         const cleanReferralCode = typeof referralCode === 'string' ? referralCode.trim().toUpperCase() : '';
+        const cleanEmail = normalizeEmail(email);
 
         if (!cleanUsername || !password) return res.status(400).json({ message: 'Required fields missing.' });
         if (cleanUsername.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters.' });
         if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+        if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            return res.status(400).json({ message: 'Email format is invalid.' });
+        }
         
         const existingUser = await findUserByUsername(cleanUsername);
         if (existingUser) return res.status(400).json({ message: 'Username exists.' });
+        if (cleanEmail) {
+            const existingEmail = await findUserByEmail(cleanEmail);
+            if (existingEmail) return res.status(400).json({ message: 'Email already in use.' });
+        }
 
         let referrer = null;
         if (cleanReferralCode) {
@@ -101,12 +119,18 @@ router.post('/register', registerLimiter, async (req, res) => {
         const user = new User({ 
             username: cleanUsername, 
             password, 
+            email: cleanEmail || undefined,
             referredBy: referrer?._id, 
             storageBonus: referrer ? 52428800 : 0 
         });
         await user.save();
         res.status(201).json({ message: 'User registered.' });
     } catch (error) {
+        if (error && error.code === 11000) {
+            if (error.keyPattern?.username) return res.status(400).json({ message: 'Username exists.' });
+            if (error.keyPattern?.referralCode) return res.status(503).json({ message: 'Please retry registration.' });
+        }
+        console.error('Register error:', error);
         res.status(500).json({ message: 'Registration failed.' });
     }
 });

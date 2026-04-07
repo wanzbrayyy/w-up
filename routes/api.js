@@ -1019,12 +1019,18 @@ router.post('/files/:alias/comment', auth.protectApi, async (req, res) => {
     res.json({ message: 'Comment added', comment: file.comments[file.comments.length-1] });
 });
 router.post('/profile/branding', auth.protectApi, async (req, res) => {
-    const { logoUrl, primaryColor, pageTitle } = req.body;
+    const { logoUrl, logoBase64, primaryColor, pageTitle } = req.body;
     if (req.user.plan !== 'pro') {
         return res.status(403).json({ message: 'Branding is a Pro feature.' });
     }
+
+    let finalLogoUrl = typeof logoUrl === 'string' ? logoUrl.trim() : '';
+    if (typeof logoBase64 === 'string' && logoBase64.startsWith('data:image/')) {
+        finalLogoUrl = logoBase64;
+    }
+
     req.user.branding = {
-        logoUrl: logoUrl,
+        logoUrl: finalLogoUrl,
         primaryColor: primaryColor,
         pageTitle: pageTitle
     };
@@ -1197,9 +1203,23 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
 });
 
 router.put('/profile/settings', auth.protectApi, async (req, res) => {
-    const { isPublicProfile, publicBio } = req.body;
+    const { isPublicProfile, publicBio, email } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ message: 'Email format is invalid.' });
+    }
+
+    if (normalizedEmail) {
+        const existingUser = await User.findOne({ email: normalizedEmail, _id: { $ne: req.user.id } });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email already in use.' });
+        }
+    }
+
     req.user.isPublicProfile = isPublicProfile;
     req.user.publicBio = publicBio;
+    req.user.email = normalizedEmail || '';
     await req.user.save();
     res.json({ message: 'Profile updated' });
 });

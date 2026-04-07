@@ -17,6 +17,14 @@
             </div>
 
             <div class="form-group">
+                <label for="email">Email <span class="badge-optional">Optional</span></label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-envelope input-icon"></i>
+                    <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label for="password">Password</label>
                 <div class="input-wrapper">
                     <i class="fa-solid fa-lock input-icon"></i>
@@ -82,6 +90,7 @@
 
         const formData = {
             username: e.target.username.value.trim(),
+            email: e.target.email.value.trim(),
             password: e.target.password.value,
             referralCode: e.target.referralCode.value
         };
@@ -96,6 +105,14 @@
 
         if (formData.password !== e.target.confirmPassword.value) {
             errorBox.textContent = 'Password confirmation does not match.';
+            errorBox.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Sign Up</span> <i class="fa-solid fa-arrow-right"></i>';
+            return;
+        }
+
+        if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+            errorBox.textContent = 'Email format is invalid.';
             errorBox.style.display = 'block';
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<span>Sign Up</span> <i class="fa-solid fa-arrow-right"></i>';

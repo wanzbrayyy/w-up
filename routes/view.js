@@ -3,7 +3,6 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const { createCanvas } = require('canvas');
 const geoip = require('geoip-lite');
 const File = require('../models/file');
 const User = require('../models/user');
@@ -18,6 +17,15 @@ const { getMidtransConfig, getSnapScriptUrl, hasMidtransConfig } = require('../u
 
 function getRequestOrigin(req) {
     return `${req.protocol}://${req.get('host')}`;
+}
+
+function escapeXml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 router.get('/', auth.checkAuthStatus, (req, res) => res.render('index'));

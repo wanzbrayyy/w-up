@@ -18,7 +18,7 @@
             <section class="billing-hero">
                 <div class="hero-copy">
                     <span class="hero-badge">Real Payment Active</span>
-                    <h2>Upgrade PRO dengan Midtrans dan buka katalog PPOB langsung dari dashboard Anda.</h2>
+                    <h2>Upgrade PRO dengan Midtrans dari halaman payment yang lebih rapi dan fokus.</h2>
                     <p>Halaman ini sekarang tidak lagi demo. Checkout PRO dibuat sebagai transaksi permanen, statusnya tersimpan, dan histori pembayarannya tampil di akun Anda.</p>
                     <div class="hero-metrics">
                         <div class="hero-metric">
@@ -43,7 +43,6 @@
 
             <div class="billing-tabs">
                 <button class="billing-tab active" data-tab="proTab">PRO Upgrade</button>
-                <button class="billing-tab" data-tab="ppobTab">PPOB Catalog</button>
                 <button class="billing-tab" data-tab="historyTab">Riwayat</button>
             </div>
 
@@ -135,30 +134,6 @@
                             Transaksi yang berhasil akan otomatis memperpanjang masa aktif PRO Anda dan masuk ke riwayat pembayaran.
                         </div>
                     </section>
-                </div>
-            </section>
-
-            <section class="billing-pane" id="ppobTab">
-                <div class="billing-card">
-                    <div class="section-head">
-                        <div>
-                            <h3>Katalog PPOB</h3>
-                            <p>Daftar layanan ditarik langsung dari API Jagoanpedia dengan action <code>services</code>.</p>
-                        </div>
-                        <button class="btn secondary-btn" id="reloadPpobBtn">
-                            <i class="fa-solid fa-rotate"></i> Refresh
-                        </button>
-                    </div>
-
-                    <div class="ppob-toolbar">
-                        <input type="text" id="ppobSearch" class="full-input" placeholder="Cari operator, kategori, atau nama layanan...">
-                        <select id="ppobCategory" class="full-input">
-                            <option value="">Semua kategori</option>
-                        </select>
-                    </div>
-
-                    <div id="ppobMeta" class="ppob-meta">Memuat katalog PPOB...</div>
-                    <div class="ppob-grid" id="ppobGrid"></div>
                 </div>
             </section>
 
@@ -349,44 +324,13 @@
         border: none;
         margin-bottom: 0.85rem;
     }
-    .gateway-warning, .summary-note, .ppob-meta {
+    .gateway-warning, .summary-note {
         padding: 0.95rem 1rem;
         border-radius: 16px;
         line-height: 1.65;
         color: var(--muted-text);
         background: var(--bg-secondary);
         border: 1px solid var(--border);
-    }
-    .ppob-toolbar {
-        display: grid;
-        grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.7fr);
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-    .ppob-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
-    }
-    .ppob-card {
-        padding: 1rem;
-        border-radius: 20px;
-        border: 1px solid var(--border);
-        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.9));
-    }
-    .ppob-card strong { display: block; margin-bottom: 0.35rem; }
-    .ppob-card small { color: var(--muted-text); display: block; line-height: 1.6; }
-    .ppob-price { margin-top: 0.85rem; font-size: 1.15rem; font-weight: 800; }
-    .ppob-status {
-        display: inline-flex;
-        padding: 0.25rem 0.55rem;
-        border-radius: 999px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        margin-top: 0.85rem;
-        background: rgba(22,163,74,0.1);
-        color: #15803d;
     }
     .history-list { display: grid; gap: 0.95rem; }
     .history-item {
@@ -422,7 +366,7 @@
     }
     @media (max-width: 720px) {
         .billing-shell { padding: 1rem; }
-        .ppob-toolbar, .history-item { grid-template-columns: 1fr; }
+        .history-item { grid-template-columns: 1fr; }
     }
 </style>
 
@@ -444,17 +388,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryMethod = document.getElementById('summaryMethod');
     const summaryTotal = document.getElementById('summaryTotal');
     const payNowBtn = document.getElementById('payNowBtn');
-    const ppobGrid = document.getElementById('ppobGrid');
-    const ppobMeta = document.getElementById('ppobMeta');
-    const ppobSearch = document.getElementById('ppobSearch');
-    const ppobCategory = document.getElementById('ppobCategory');
-    const reloadPpobBtn = document.getElementById('reloadPpobBtn');
 
     let selectedCycle = 'monthly';
     let selectedMethod = 'qris';
     let selectedPrice = Number(document.querySelector('.plan-card.active')?.dataset.price || 0);
-    let ppobLoaded = false;
-    let allServices = [];
 
     function toggleSidebar() {
         if (sidebar) sidebar.classList.toggle('active');
@@ -481,7 +418,6 @@ document.addEventListener('DOMContentLoaded', () => {
             panes.forEach(item => item.classList.remove('active'));
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab)?.classList.add('active');
-            if (tab.dataset.tab === 'ppobTab' && !ppobLoaded) loadPpobServices();
         });
     });
 
@@ -503,74 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshSummary();
         });
     });
-
-    function renderPpob(services) {
-        if (!ppobGrid) return;
-        if (!services.length) {
-            ppobGrid.innerHTML = `
-                <div class="empty-state billing-empty">
-                    <i class="fa-solid fa-store-slash"></i>
-                    <p>Tidak ada layanan yang cocok.</p>
-                </div>
-            `;
-            return;
-        }
-
-        ppobGrid.innerHTML = services.map(service => `
-            <article class="ppob-card">
-                <strong>${service.name || service.id || 'Unknown Service'}</strong>
-                <small>${service.operator || 'Unknown Operator'} • ${service.category || 'General'}</small>
-                <small>${service.note || 'Layanan PPOB dari API catalog.'}</small>
-                <div class="ppob-price">${formatPrice(service.price || 0)}</div>
-                <span class="ppob-status">${service.status || 'Active'}</span>
-            </article>
-        `).join('');
-    }
-
-    function applyPpobFilters() {
-        const search = (ppobSearch?.value || '').trim().toLowerCase();
-        const category = (ppobCategory?.value || '').trim().toLowerCase();
-        const filtered = allServices.filter(service => {
-            const blob = `${service.name || ''} ${service.operator || ''} ${service.category || ''}`.toLowerCase();
-            if (search && !blob.includes(search)) return false;
-            if (category && String(service.category || '').toLowerCase() !== category) return false;
-            return true;
-        });
-        ppobMeta.textContent = `${filtered.length} layanan tampil dari ${allServices.length} layanan katalog.`;
-        renderPpob(filtered);
-    }
-
-    async function loadPpobServices() {
-        if (!ppobGrid || !ppobMeta) return;
-        ppobMeta.textContent = 'Memuat katalog PPOB...';
-        ppobGrid.innerHTML = '';
-
-        try {
-            const response = await fetch('/api/ppob/services');
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Gagal memuat katalog PPOB.');
-
-            allServices = Array.isArray(data.services) ? data.services : [];
-            ppobLoaded = true;
-
-            const categories = [...new Set(allServices.map(service => service.category).filter(Boolean))].sort();
-            if (ppobCategory) {
-                ppobCategory.innerHTML = '<option value="">Semua kategori</option>' + categories.map(category => (
-                    `<option value="${String(category).toLowerCase()}">${category}</option>`
-                )).join('');
-            }
-
-            applyPpobFilters();
-        } catch (error) {
-            ppobMeta.textContent = error.message || 'Gagal memuat katalog PPOB.';
-            ppobGrid.innerHTML = `
-                <div class="empty-state billing-empty">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <p>Catalog PPOB belum bisa dimuat sekarang.</p>
-                </div>
-            `;
-        }
-    }
 
     async function syncPayment(orderId) {
         try {
@@ -629,13 +497,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    ppobSearch?.addEventListener('input', applyPpobFilters);
-    ppobCategory?.addEventListener('change', applyPpobFilters);
-    reloadPpobBtn?.addEventListener('click', () => {
-        ppobLoaded = false;
-        loadPpobServices();
-    });
 
     refreshSummary();
 });
