@@ -898,12 +898,33 @@ router.get('/files/:id/share-details', auth.protectApi, async (req, res) => {
         }
         res.json({
             collaborators: file.collaborators,
-            shareLinks: file.shareLinks
+            shareLinks: file.shareLinks,
+            isHidden: !!file.isHidden
         });
     } catch (error) {
         res.status(500).json({ message: 'Server error.' });
     }
 });
+
+router.put('/files/:id/visibility', auth.protectApi, async (req, res) => {
+    try {
+        const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
+        if (!file) {
+            return res.status(404).json({ message: 'File not found.' });
+        }
+
+        file.isHidden = !!req.body.isHidden;
+        await file.save();
+
+        res.json({
+            message: file.isHidden ? 'File set to private.' : 'File set to public.',
+            isHidden: file.isHidden
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to update file visibility.' });
+    }
+});
+
 router.put('/files/:id/meta', auth.protectApi, async (req, res) => {
     try {
         const { description, tags, isHidden } = req.body;
@@ -1163,8 +1184,18 @@ router.post('/files/:id/share-links', auth.protectApi, async (req, res) => {
     const file = await File.findOne({ _id: req.params.id, owner: req.user.id });
     if (!file) return res.status(404).json({ message: 'File not found.' });
 
+    const requestedSlug = typeof req.body.customSlug === 'string' ? req.body.customSlug.trim() : '';
+    const normalizedSlug = requestedSlug
+        ? normalizeAlias(requestedSlug.toLowerCase().replace(/\s+/g, '-'), `share_${crypto.randomBytes(4).toString('hex')}`)
+        : crypto.randomBytes(8).toString('hex');
+
+    const existingLink = await File.findOne({ 'shareLinks.linkId': normalizedSlug });
+    if (existingLink) {
+        return res.status(400).json({ message: 'Custom link already in use. Choose another one.' });
+    }
+
     const newLink = {
-        linkId: crypto.randomBytes(8).toString('hex'),
+        linkId: normalizedSlug,
     };
     file.shareLinks.push(newLink);
     await file.save();

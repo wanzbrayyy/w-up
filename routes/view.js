@@ -339,6 +339,23 @@ router.get('/dashboard', auth.protectView, async (req, res) => {
     }
 });
 
+router.get('/private/:linkId', auth.checkAuthStatus, async (req, res) => {
+    try {
+        const file = await File.findOne({ 'shareLinks.linkId': req.params.linkId }).select('customAlias shareLinks deletedAt');
+        if (!file || file.deletedAt) return res.status(404).render('404');
+
+        const link = file.shareLinks.find(item => item.linkId === req.params.linkId);
+        if (!link) return res.status(404).render('404');
+        if (link.expiresAt && link.expiresAt < new Date()) {
+            return res.status(410).send('This private link has expired.');
+        }
+
+        res.redirect(`/w-upload/file/${encodeURIComponent(file.customAlias)}?share_id=${encodeURIComponent(req.params.linkId)}`);
+    } catch (error) {
+        res.status(500).render('404');
+    }
+});
+
 router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier })
@@ -351,10 +368,18 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
         if (!file || file.deletedAt) return res.status(404).render('404');
         
         const shareId = req.query.share_id;
+        const hasOwnerAccess = !!(req.user && file.owner && file.owner._id && file.owner._id.equals(req.user._id));
+        const hasCollaboratorAccess = !!(req.user && file.collaborators.some(c => c.user.equals(req.user._id)));
+        let activeShareLink = null;
         if (shareId) {
             const link = file.shareLinks.find(link => link.linkId === shareId);
             if (!link) return res.status(403).send('This share link is invalid or has been revoked.');
             if (link.expiresAt && link.expiresAt < new Date()) return res.status(410).send('This share link has expired.');
+            activeShareLink = link;
+        }
+
+        if (file.isHidden && !hasOwnerAccess && !hasCollaboratorAccess && !activeShareLink) {
+            return res.status(403).send('This file is private. Use a private link or log in with access.');
         }
 
         const ip = req.ip || req.connection.remoteAddress;
@@ -382,7 +407,7 @@ router.get('/w-upload/file/:identifier', auth.checkAuthStatus, async (req, res) 
         
         const downloadLink = file.isFolder ? `/api/files/${file._id}/zip` : `/w-upload/raw/${file.customAlias}${shareId ? '?share_id='+shareId : ''}`;
         const fileExtension = path.extname(file.originalName).toLowerCase();
-        const isOwner = req.user && file.owner._id.equals(req.user._id);
+        const isOwner = hasOwnerAccess;
         const isEditor = req.user && file.collaborators.some(c => c.user.equals(req.user._id) && c.role === 'editor');
         const canEdit = isOwner || isEditor;
 
@@ -433,7 +458,7 @@ router.post('/w-upload/file/:identifier/auth', async (req, res) => {
     }
 });
 
-router.get('/w-upload/raw/:identifier', async (req, res) => {
+router.get('/w-upload/raw/:identifier', auth.checkAuthStatus, async (req, res) => {
     try {
         const file = await File.findOne({ customAlias: req.params.identifier });
         
@@ -442,10 +467,18 @@ router.get('/w-upload/raw/:identifier', async (req, res) => {
         if (file.isFolder) return res.status(400).send('Cannot raw download a folder. Use zip.');
 
         const shareId = req.query.share_id;
+        const hasOwnerAccess = !!(req.user && file.owner && file.owner.equals && file.owner.equals(req.user._id));
+        const hasCollaboratorAccess = !!(req.user && file.collaborators.some(c => c.user.equals(req.user._id)));
+        let activeShareLink = null;
         if (shareId) {
             const link = file.shareLinks.find(link => link.linkId === shareId);
             if (!link) return res.status(403).send('This share link is invalid or has been revoked.');
             if (link.expiresAt && link.expiresAt < new Date()) return res.status(410).send('This share link has expired.');
+            activeShareLink = link;
+        }
+
+        if (file.isHidden && !hasOwnerAccess && !hasCollaboratorAccess && !activeShareLink) {
+            return res.status(403).send('This file is private. Use the private link shared with you.');
         }
 
         if (file.expiresAt && file.expiresAt < new Date()) {

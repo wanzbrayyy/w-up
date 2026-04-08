@@ -89,6 +89,7 @@ exports.protectAdmin = (req, res, next) => {
 exports.checkAuthStatus = async (req, res, next) => {
     res.locals.isLoggedIn = false;
     res.locals.user = null;
+    req.user = null;
     const token = req.cookies.token;
 
     if (token) {
@@ -96,6 +97,7 @@ exports.checkAuthStatus = async (req, res, next) => {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const user = await User.findById(decoded.id).select('-password');
             if (user && !user.isBanned) {
+                req.user = user;
                 res.locals.isLoggedIn = true;
                 res.locals.user = user;
             }

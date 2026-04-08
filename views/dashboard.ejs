@@ -167,6 +167,7 @@
                      data-alias="<%= file.customAlias %>"
                      data-type="<%= file.isFolder ? 'folder' : 'file' %>"
                      data-content-type="<%= file.contentType %>"
+                     data-is-hidden="<%= file.isHidden ? 'true' : 'false' %>"
                      data-ext="<%= ext %>"
                      draggable="true">
                     
@@ -192,6 +193,9 @@
                         <div class="meta">
                             <% if (!file.isFolder) { %>
                                 <%= (file.size / 1024 / 1024).toFixed(2) %> MB
+                                <span class="file-visibility-badge <%= file.isHidden ? 'private' : 'public' %>">
+                                    <%= file.isHidden ? 'Private' : 'Public' %>
+                                </span>
                             <% } else { %>
                                 <% if(file.collaborators && file.collaborators.length > 0) { %>
                                     <i class="fa-solid fa-users" title="Shared Folder"></i>
@@ -222,6 +226,7 @@
         <li id="cmOpen"><i class="fa-solid fa-up-right-from-square"></i> Open / Edit</li>
         <li id="cmShare"><i class="fa-solid fa-share-nodes"></i> Share</li>
         <li id="cmCopyLink"><i class="fa-solid fa-link"></i> Copy Link</li>
+        <li id="cmVisibility"><i class="fa-solid fa-eye-slash"></i> Set Private</li>
         <li class="separator" id="cmToolsSeparator"></li>
         <li id="cmOCR"><i class="fa-solid fa-wand-magic-sparkles"></i> Extract Text (OCR)</li>
         <li id="cmConvert"><i class="fa-solid fa-right-left"></i> Convert</li>
@@ -237,7 +242,7 @@
     </ul>
 </div>
 
-<div class="modal" id="shareModal"><div class="modal-box" style="max-width:600px"><h3>Share Settings</h3><div class="tabs"><button class="tab-btn active" data-tab="tab-collab">Collaborators</button><button class="tab-btn" data-tab="tab-links">Share Links</button><button class="tab-btn" data-tab="tab-analytics">Analytics</button></div><div class="tab-content active" id="tab-collab"><div style="display:flex;gap:10px;margin-bottom:1rem;"><input type="text" id="shareCollabUser" class="full-input" placeholder="Username"><select id="collabRole" class="full-input" style="width:120px; flex-shrink: 0;"><option value="viewer">Viewer</option><option value="uploader">Uploader</option><option value="editor">Editor</option></select><button class="btn primary-btn" id="addCollabBtn">Add</button></div><div id="collaboratorsList" class="items-list"></div></div><div class="tab-content" id="tab-links"><button class="btn secondary-btn" id="createShareLinkBtn" style="margin-bottom:1rem;"><i class="fa-solid fa-plus"></i> Create New Link</button><div id="shareLinksList" class="items-list"></div></div><div class="tab-content" id="tab-analytics"><div style="position: relative; height:200px; width:100%;"><canvas id="analyticsChart"></canvas></div><ul id="analyticsList"></ul></div><div class="modal-footer"><button class="btn cancel-btn">Close</button></div></div></div>
+<div class="modal" id="shareModal"><div class="modal-box" style="max-width:640px"><h3>Share Settings</h3><div class="tabs"><button class="tab-btn active" data-tab="tab-collab">Collaborators</button><button class="tab-btn" data-tab="tab-links">Share Links</button><button class="tab-btn" data-tab="tab-analytics">Analytics</button></div><div class="tab-content active" id="tab-collab"><div style="display:flex;gap:10px;margin-bottom:1rem;"><input type="text" id="shareCollabUser" class="full-input" placeholder="Username"><select id="collabRole" class="full-input" style="width:120px; flex-shrink: 0;"><option value="viewer">Viewer</option><option value="uploader">Uploader</option><option value="editor">Editor</option></select><button class="btn primary-btn" id="addCollabBtn">Add</button></div><div id="collaboratorsList" class="items-list"></div></div><div class="tab-content" id="tab-links"><div class="share-link-toolbar"><span id="visibilityStatusChip" class="file-visibility-badge public">Public</span><button class="btn secondary-btn" id="toggleVisibilityBtn"><i class="fa-solid fa-eye-slash"></i> Set Private</button></div><div class="share-custom-row"><input type="text" id="customPrivateSlug" class="full-input" placeholder="custom-private-link"><button class="btn secondary-btn" id="createShareLinkBtn"><i class="fa-solid fa-plus"></i> Create Link</button></div><div id="shareLinksList" class="items-list"></div></div><div class="tab-content" id="tab-analytics"><div style="position: relative; height:200px; width:100%;"><canvas id="analyticsChart"></canvas></div><ul id="analyticsList"></ul></div><div class="modal-footer"><button class="btn cancel-btn">Close</button></div></div></div>
 <div class="modal" id="fileRequestModal"><div class="modal-box"><h3>Create File Request</h3><input type="text" id="fileRequestLabel" placeholder="Label (e.g., 'Project Submissions')" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="createFileRequestBtn">Create</button></div></div></div>
 <div class="modal" id="folderModal"><div class="modal-box"><h3>New Folder</h3><input type="text" id="folderNameInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="createFolderBtn">Create</button></div></div></div>
 <div class="modal" id="remoteModal"><div class="modal-box"><h3>Remote Upload</h3><input type="url" id="remoteUrlInput" class="full-input"><div class="modal-footer"><button class="btn cancel-btn">Cancel</button><button class="btn confirm-btn" id="startRemoteBtn">Fetch</button></div></div></div>
@@ -324,6 +329,54 @@
     }
     .quick-card strong { display: block; color: var(--text); }
     .quick-card small { color: var(--muted-text); }
+    .file-visibility-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 0.4rem;
+        padding: 0.14rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        vertical-align: middle;
+    }
+    .file-visibility-badge.public {
+        background: rgba(22, 163, 74, 0.12);
+        color: #15803d;
+    }
+    .file-visibility-badge.private {
+        background: rgba(239, 68, 68, 0.12);
+        color: #b91c1c;
+    }
+    .share-link-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .share-custom-row {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    .context-menu {
+        max-height: min(72vh, 420px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .main-content {
+        -webkit-overflow-scrolling: touch;
+    }
+    @media (hover: none), (pointer: coarse) {
+        .context-trigger {
+            opacity: 1 !important;
+            background: rgba(15, 23, 42, 0.08);
+            border-radius: 999px;
+        }
+    }
     .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
     .tab-btn { background: none; border: none; padding: 0.75rem 1rem; cursor: pointer; color: var(--muted-text); border-bottom: 2px solid transparent; font-weight: 600; font-size: 0.9rem; }
     .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
@@ -334,6 +387,7 @@
     #analyticsList li { margin-bottom: 0.5rem; }
     @media (max-width: 980px) {
         .dashboard-hero, .dashboard-quick-grid { grid-template-columns: 1fr; }
+        .share-link-toolbar, .share-custom-row { flex-direction: column; align-items: stretch; }
     }
 </style>
 
@@ -390,29 +444,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const contextMenu = document.getElementById('contextMenu');
+    const visibilityStatusChip = document.getElementById('visibilityStatusChip');
+    const toggleVisibilityBtn = document.getElementById('toggleVisibilityBtn');
+    const customPrivateSlug = document.getElementById('customPrivateSlug');
     let contextTarget = null;
     window.contextTarget = null;
 
+    function updateVisibilityUi() {
+        if (!contextTarget || !visibilityStatusChip || !toggleVisibilityBtn) return;
+        const isPrivate = contextTarget.dataset.isHidden === 'true';
+        visibilityStatusChip.textContent = isPrivate ? 'Private' : 'Public';
+        visibilityStatusChip.className = `file-visibility-badge ${isPrivate ? 'private' : 'public'}`;
+        toggleVisibilityBtn.innerHTML = isPrivate
+            ? '<i class="fa-solid fa-eye"></i> Set Public'
+            : '<i class="fa-solid fa-eye-slash"></i> Set Private';
+        document.getElementById('cmVisibility').innerHTML = isPrivate
+            ? '<i class="fa-solid fa-eye"></i> Set Public'
+            : '<i class="fa-solid fa-eye-slash"></i> Set Private';
+    }
+
+    function openContextMenu(card, x, y) {
+        contextTarget = card;
+        window.contextTarget = card;
+        updateVisibilityUi();
+        document.querySelectorAll('#contextMenu li[id]').forEach(item => item.style.display = 'flex');
+        const isFile = card.dataset.type === 'file';
+        let toolsVisible = false;
+        if (isFile) {
+            if (card.dataset.contentType.startsWith('image/')) toolsVisible = true;
+            if (card.dataset.ext === 'zip') toolsVisible = true;
+        }
+        document.getElementById('cmOCR').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
+        document.getElementById('cmConvert').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
+        document.getElementById('cmExtract').style.display = (isFile && card.dataset.ext === 'zip') ? 'flex' : 'none';
+        document.getElementById('cmToolsSeparator').style.display = toolsVisible ? 'block' : 'none';
+        document.getElementById('renameInput').value = card.dataset.name;
+
+        contextMenu.style.display = 'block';
+        contextMenu.style.top = '0px';
+        contextMenu.style.left = '0px';
+        const menuRect = contextMenu.getBoundingClientRect();
+        const clampedLeft = Math.max(12, Math.min(x, window.innerWidth - menuRect.width - 12));
+        const clampedTop = Math.max(12, Math.min(y, window.innerHeight - menuRect.height - 12));
+        contextMenu.style.left = `${clampedLeft}px`;
+        contextMenu.style.top = `${clampedTop}px`;
+    }
+
+    function getPrivateShareLink(linkId) {
+        return `${window.location.origin}/private/${linkId}`;
+    }
+
     document.querySelectorAll('.file-card').forEach(card => {
+        const trigger = card.querySelector('.context-trigger');
         card.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            contextTarget = card;
-            window.contextTarget = card;
-            document.querySelectorAll('#contextMenu li[id]').forEach(item => item.style.display = 'flex');
-            const isFile = card.dataset.type === 'file';
-            let toolsVisible = false;
-            if (isFile) {
-                if (card.dataset.contentType.startsWith('image/')) { toolsVisible = true; }
-                if (card.dataset.ext === 'zip') { toolsVisible = true; }
-            }
-            document.getElementById('cmOCR').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
-            document.getElementById('cmConvert').style.display = (isFile && card.dataset.contentType.startsWith('image/')) ? 'flex' : 'none';
-            document.getElementById('cmExtract').style.display = (isFile && card.dataset.ext === 'zip') ? 'flex' : 'none';
-            document.getElementById('cmToolsSeparator').style.display = toolsVisible ? 'block' : 'none';
-            document.getElementById('renameInput').value = card.dataset.name;
-            contextMenu.style.top = `${e.clientY}px`;
-            contextMenu.style.left = `${e.clientX}px`;
-            contextMenu.style.display = 'block';
+            openContextMenu(card, e.clientX, e.clientY);
+        });
+
+        trigger?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = trigger.getBoundingClientRect();
+            openContextMenu(card, rect.right - 8, rect.bottom + 8);
         });
     });
 
@@ -461,9 +554,35 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('cmCopyLink').addEventListener('click', () => {
-        const link = `${window.location.origin}/w-upload/file/${contextTarget.dataset.alias}`;
+        if (!contextTarget) return;
+        const isPrivate = contextTarget.dataset.isHidden === 'true';
+        const firstPrivateLink = contextTarget.dataset.primaryShareLink;
+        const link = isPrivate && firstPrivateLink
+            ? getPrivateShareLink(firstPrivateLink)
+            : `${window.location.origin}/w-upload/file/${contextTarget.dataset.alias}`;
+
+        if (isPrivate && !firstPrivateLink) {
+            showToast('Create a private link first for this file.', 'warning');
+            return;
+        }
+
         navigator.clipboard.writeText(link);
         showToast('Link copied to clipboard!');
+    });
+
+    document.getElementById('cmVisibility').addEventListener('click', async () => {
+        if (!contextTarget) return;
+        const nextState = contextTarget.dataset.isHidden !== 'true';
+        const success = await performAction(`/api/files/${contextTarget.dataset.id}/visibility`, 'PUT', { isHidden: nextState });
+        if (success) {
+            contextTarget.dataset.isHidden = nextState ? 'true' : 'false';
+            const badge = contextTarget.querySelector('.file-visibility-badge');
+            if (badge) {
+                badge.textContent = nextState ? 'Private' : 'Public';
+                badge.className = `file-visibility-badge ${nextState ? 'private' : 'public'}`;
+            }
+            updateVisibilityUi();
+        }
     });
 
     document.getElementById('cmDelete').addEventListener('click', async () => {
@@ -534,7 +653,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('createShareLinkBtn').addEventListener('click', async () => {
-        if (await performAction(`/api/files/${contextTarget.dataset.id}/share-links`, 'POST')) loadShareData();
+        if (!contextTarget) return;
+        const payload = { customSlug: customPrivateSlug?.value?.trim() || '' };
+        if (await performAction(`/api/files/${contextTarget.dataset.id}/share-links`, 'POST', payload)) {
+            if (customPrivateSlug) customPrivateSlug.value = '';
+            loadShareData();
+        }
+    });
+
+    toggleVisibilityBtn?.addEventListener('click', async () => {
+        if (!contextTarget) return;
+        const nextState = contextTarget.dataset.isHidden !== 'true';
+        const success = await performAction(`/api/files/${contextTarget.dataset.id}/visibility`, 'PUT', { isHidden: nextState });
+        if (success) {
+            contextTarget.dataset.isHidden = nextState ? 'true' : 'false';
+            const badge = contextTarget.querySelector('.file-visibility-badge');
+            if (badge) {
+                badge.textContent = nextState ? 'Private' : 'Public';
+                badge.className = `file-visibility-badge ${nextState ? 'private' : 'public'}`;
+            }
+            updateVisibilityUi();
+        }
     });
     
     window.revokeLink = async (linkId) => {
@@ -553,15 +692,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch(`/api/files/${contextTarget.dataset.id}/share-details`);
         if (!res.ok) { showToast('Failed to load share data', 'error'); return; }
         const data = await res.json();
+        contextTarget.dataset.isHidden = data.isHidden ? 'true' : 'false';
+        contextTarget.dataset.primaryShareLink = data.shareLinks[0]?.linkId || '';
+        updateVisibilityUi();
         
         const collabList = document.getElementById('collaboratorsList');
         collabList.innerHTML = data.collaborators.map(c => `<div class="list-item"><span>${c.user.username} (${c.role})</span><button class="icon-btn danger" onclick="removeCollab('${c.user.username}')"><i class="fa-solid fa-trash"></i></button></div>`).join('');
 
         const linksList = document.getElementById('shareLinksList');
         linksList.innerHTML = data.shareLinks.map(l => {
-            const fullLink = `${window.location.origin}/w-upload/file/${contextTarget.dataset.alias}?share_id=${l.linkId}`;
+            const fullLink = getPrivateShareLink(l.linkId);
             return `<div class="list-item"><code>${fullLink}</code><div><button class="icon-btn" onclick="navigator.clipboard.writeText('${fullLink}'); showToast('Copied!')"><i class="fa-solid fa-copy"></i></button><button class="icon-btn danger" onclick="revokeLink('${l.linkId}')"><i class="fa-solid fa-trash"></i></button></div></div>`;
-        }).join('');
+        }).join('') || '<p class="text-muted">No private links created yet.</p>';
         
         await loadAnalytics();
     }

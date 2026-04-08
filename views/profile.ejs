@@ -185,7 +185,7 @@
                                         <div class="item-info">
                                             <div class="item-title"><%= apiKey.label %></div>
                                             <div class="item-meta">
-                                                <code id="key-<%= apiKey._id %>"><%= apiKey.key %></code>
+                                                <code id="key-<%= apiKey._id %>" data-copy-value="<%= apiKey.key %>"><%= apiKey.key %></code>
                                             </div>
                                         </div>
                                         <div class="item-actions">
@@ -576,16 +576,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const textToCopy = targetElement.innerText;
-        if (!textToCopy) {
+        const rawValue = targetElement.dataset?.copyValue || targetElement.textContent;
+        if (!rawValue) {
             showToast('Nothing to copy.', 'warning');
             return;
         }
         try {
-            await navigator.clipboard.writeText(textToCopy);
+            await navigator.clipboard.writeText(rawValue.trim());
             showToast('Copied to clipboard!', 'success');
         } catch (err) {
             const tempInput = document.createElement('textarea');
-            tempInput.value = textToCopy;
+            tempInput.value = rawValue.trim();
             tempInput.style.position = 'absolute';
             tempInput.style.left = '-9999px';
             document.body.appendChild(tempInput);
