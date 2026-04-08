@@ -21,6 +21,7 @@ const File = require('../models/file');
 const User = require('../models/user');
 const Team = require('../models/team');
 const PaymentTransaction = require('../models/paymentTransaction');
+const AiInsight = require('../models/aiInsight');
 const { r2, PutObjectCommand, GetObjectCommand } = require('../utils/r2');
 const FileRequest = require('../models/fileRequest');
 const UploadSession = require('../models/uploadSession');
@@ -48,6 +49,11 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASS
     }
 });
+
+const API_KEY_LIMITS = {
+    free: 3,
+    pro: 25
+};
 
 async function sendEmail(to, subject, htmlContent) {
     try {
@@ -205,6 +211,76 @@ async function saveFileWithUniqueAlias(fileDoc, fallbackName) {
     throw new Error('Could not allocate a unique file alias after multiple attempts.');
 }
 
+function formatInsightSize(size = 0) {
+    const bytes = Number(size || 0);
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+}
+
+function buildUploadInsightPayload(file, source = 'standard_upload') {
+    const suggestions = [];
+    let severity = 'info';
+    let summary = `${file.originalName} berhasil dianalisis setelah upload.`;
+
+    if (file.contentType.startsWith('image/')) {
+        summary = `${file.originalName} terdeteksi sebagai gambar ${formatInsightSize(file.size)}. File ini cocok untuk OCR, watermark, atau publish ke public page.`;
+        suggestions.push('Coba OCR jika gambar berisi teks.');
+        suggestions.push('Aktifkan watermark jika file akan dibagikan publik.');
+    } else if (file.contentType.startsWith('video/')) {
+        summary = `${file.originalName} terdeteksi sebagai video ${formatInsightSize(file.size)}. AI menandainya siap untuk playback dan distribusi link langsung.`;
+        suggestions.push('Gunakan halaman download/video untuk preview sebelum dibagikan.');
+        suggestions.push('Tambahkan deskripsi agar file lebih mudah dicari lewat AI assistant.');
+    } else if (file.contentType.includes('zip') || file.originalName.toLowerCase().endsWith('.zip') || file.originalName.toLowerCase().endsWith('.rar')) {
+        summary = `${file.originalName} adalah arsip ${formatInsightSize(file.size)}. File ini bisa diekstrak langsung dari dashboard tanpa upload ulang.`;
+        severity = 'success';
+        suggestions.push('Gunakan fitur extract archive dari dashboard.');
+        suggestions.push('Periksa isi arsip sebelum dibagikan ke collaborator.');
+    } else {
+        summary = `${file.originalName} tersimpan sebagai ${file.contentType || 'file umum'} dengan ukuran ${formatInsightSize(file.size)}.`;
+        suggestions.push('Tambahkan tag atau deskripsi agar AI lebih akurat saat mencari file.');
+    }
+
+    if (file.size >= 250 * 1024 * 1024) {
+        severity = 'warning';
+        suggestions.push('Ukuran file cukup besar, pantau storage dan share bandwidth-nya.');
+    }
+
+    return {
+        severity,
+        title: `Upload analyzed: ${file.originalName}`,
+        summary,
+        suggestions
+    };
+}
+
+async function createUploadInsight(user, file, source = 'standard_upload') {
+    if (!user?._id || !file?._id) return;
+
+    try {
+        const payload = buildUploadInsightPayload(file, source);
+        await AiInsight.create({
+            user: user._id,
+            kind: 'upload_analysis',
+            title: payload.title,
+            summary: payload.summary,
+            severity: payload.severity,
+            metadata: {
+                fileId: file._id,
+                alias: file.customAlias,
+                filename: file.originalName,
+                contentType: file.contentType,
+                source,
+                size: file.size,
+                suggestions: payload.suggestions
+            }
+        });
+    } catch (error) {
+        console.error('AI insight creation failed:', error.message);
+    }
+}
+
 async function getOptionalAuthenticatedUser(req) {
     let token = req.cookies.token;
 
@@ -241,6 +317,10 @@ function getPpobConfig() {
         url: process.env.PPOB_API_URL || 'https://jagoanpedia.com/api/ppob',
         key: process.env.PPOB_API_KEY || '2169-de6d54a0-73d9-4380-ab2e-a51bb2a76d33'
     };
+}
+
+function getApiKeyLimitForPlan(plan = 'free') {
+    return plan === 'pro' ? 25 : 3;
 }
 
 function buildMidtransEnabledPayments(selectedMethod) {
@@ -582,6 +662,7 @@ router.post('/upload', async (req, res) => {
         if (req.body.publicProfileUsername) {
             const publicUser = await User.findOne({ username: req.body.publicProfileUsername, isPublicProfile: true });
             if (!publicUser) return res.status(403).json({ message: 'Public profile not found or uploads not allowed.' });
+            user = publicUser;
             ownerId = publicUser._id;
         } else if (user) {
             ownerId = user._id;
@@ -682,6 +763,7 @@ router.post('/upload', async (req, res) => {
         await saveFileWithUniqueAlias(newFile, cleanFilename);
 
         if (user) {
+            await createUploadInsight(user, newFile, req.body.publicProfileUsername ? 'public_profile_upload' : req.body.fileRequestSlug ? 'file_request_upload' : 'standard_upload');
             triggerWebhook(user, 'file.uploaded', {
                 fileId: newFile._id,
                 filename: newFile.originalName,
@@ -730,6 +812,7 @@ router.post('/upload/remote', auth.protectApi, async (req, res) => {
             sha256Hash: crypto.createHash('sha256').update(buffer).digest('hex')
         });
         await saveFileWithUniqueAlias(newFile, filename);
+        await createUploadInsight(req.user, newFile, 'remote_upload');
         res.status(201).json({ message: 'Remote upload success', file: newFile });
     } catch (error) {
         res.status(500).json({ message: 'Remote upload failed' });
@@ -794,6 +877,7 @@ router.post('/upload/chunk/finalize', auth.protectApi, async (req, res) => {
 
     await saveFileWithUniqueAlias(newFile, session.filename);
     await UploadSession.deleteOne({ _id: session._id });
+    await createUploadInsight(req.user, newFile, 'chunk_upload');
     res.status(201).json({ message: 'File assembled successfully' });
 });
 
@@ -1226,8 +1310,20 @@ router.put('/files/:id/access/:reqId', auth.protectApi, async (req, res) => {
 });
 
 router.put('/profile/settings', auth.protectApi, async (req, res) => {
-    const { isPublicProfile, publicBio, email } = req.body;
+    const {
+        isPublicProfile,
+        publicBio,
+        email,
+        publicTitle,
+        publicThemeColor,
+        profilePhotoBase64,
+        publicCoverBase64
+    } = req.body;
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedTitle = typeof publicTitle === 'string' ? publicTitle.trim() : '';
+    const normalizedThemeColor = typeof publicThemeColor === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(publicThemeColor.trim())
+        ? publicThemeColor.trim()
+        : '#2563eb';
 
     if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
         return res.status(400).json({ message: 'Email format is invalid.' });
@@ -1243,8 +1339,20 @@ router.put('/profile/settings', auth.protectApi, async (req, res) => {
     req.user.isPublicProfile = isPublicProfile;
     req.user.publicBio = publicBio;
     req.user.email = normalizedEmail || '';
+    req.user.publicTitle = normalizedTitle;
+    req.user.publicThemeColor = normalizedThemeColor;
+    if (typeof profilePhotoBase64 === 'string' && profilePhotoBase64.startsWith('data:image/')) {
+        req.user.profilePhotoUrl = profilePhotoBase64;
+    }
+    if (typeof publicCoverBase64 === 'string' && publicCoverBase64.startsWith('data:image/')) {
+        req.user.publicCoverUrl = publicCoverBase64;
+    }
     await req.user.save();
-    res.json({ message: 'Profile updated' });
+    res.json({
+        message: 'Profile updated',
+        profilePhotoUrl: req.user.profilePhotoUrl,
+        publicCoverUrl: req.user.publicCoverUrl
+    });
 });
 
 router.post('/profile/2fa/setup', auth.protectApi, async (req, res) => {
@@ -1273,17 +1381,31 @@ router.post('/profile/2fa/verify', auth.protectApi, async (req, res) => {
 });
 
 router.get('/profile/api-keys', auth.protectApi, async (req, res) => {
-    res.json({ keys: req.user.apiKeys });
+    const apiKeyLimit = API_KEY_LIMITS[req.user.plan] || API_KEY_LIMITS.free;
+    res.json({ keys: req.user.apiKeys, limit: apiKeyLimit });
 });
 
 router.post('/profile/api-key', auth.protectApi, async (req, res) => {
     const { label } = req.body;
+    const apiKeyLimit = API_KEY_LIMITS[req.user.plan] || API_KEY_LIMITS.free;
+    if ((req.user.apiKeys || []).length >= apiKeyLimit) {
+        return res.status(400).json({
+            message: `API key limit reached for ${req.user.plan.toUpperCase()} plan.`,
+            limit: apiKeyLimit
+        });
+    }
     const key = `wu_${crypto.randomBytes(24).toString('hex')}`;
     
     req.user.apiKeys.push({ key, label: label || 'Unnamed Key' });
     await req.user.save();
     
-    res.status(201).json({ message: 'API Key generated.', key, label });
+    res.status(201).json({
+        message: 'API Key generated.',
+        key,
+        label,
+        limit: apiKeyLimit,
+        used: req.user.apiKeys.length
+    });
 });
 
 router.delete('/profile/api-key/:keyId', auth.protectApi, async (req, res) => {

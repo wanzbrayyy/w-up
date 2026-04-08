@@ -10,6 +10,7 @@ const WebAuthnCredentialSchema = new mongoose.Schema({
 
 const BrandingSchema = new mongoose.Schema({
     logoUrl: { type: String },
+    coverUrl: { type: String },
     primaryColor: { type: String, default: '#4F46E5' },
     pageTitle: { type: String }
 }, { _id: false });
@@ -54,6 +55,10 @@ const UserSchema = new mongoose.Schema({
   },
   isPublicProfile: { type: Boolean, default: false },
   publicBio: { type: String, default: '' },
+  publicTitle: { type: String, default: '' },
+  publicThemeColor: { type: String, default: '#2563eb' },
+  profilePhotoUrl: { type: String, default: '' },
+  publicCoverUrl: { type: String, default: '' },
   branding: { type: BrandingSchema, default: () => ({}) },
   teams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
   sessions: [{

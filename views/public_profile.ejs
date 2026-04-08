@@ -1,8 +1,8 @@
-<%- include('partials/header', { title: (targetUser.branding && targetUser.branding.pageTitle) ? targetUser.branding.pageTitle : targetUser.username, pageCss: 'dashboard' }) %>
+<%- include('partials/header', { title: publicDisplayTitle, pageCss: 'dashboard' }) %>
 
 <style>
     :root {
-        --branded-primary: <%= targetUser.branding?.primaryColor || '#2563eb' %>;
+        --branded-primary: <%= targetUser.branding?.primaryColor || targetUser.publicThemeColor || '#2563eb' %>;
     }
     .public-profile-shell {
         max-width: 1240px;
@@ -10,17 +10,41 @@
         padding: 1.5rem 1.25rem 3rem;
     }
     .public-profile-hero {
+        position: relative;
+        overflow: hidden;
         display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+        grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
         gap: 1.5rem;
         padding: 1.8rem;
         border-radius: 30px;
-        background:
-            radial-gradient(circle at top right, rgba(249,115,22,0.18), transparent 24%),
-            linear-gradient(135deg, rgba(15,23,42,0.96), var(--branded-primary));
         color: #fff;
         border: 1px solid rgba(255,255,255,0.16);
         box-shadow: 0 30px 60px rgba(15, 23, 42, 0.18);
+        background:
+            radial-gradient(circle at top right, rgba(249,115,22,0.16), transparent 24%),
+            linear-gradient(135deg, rgba(15,23,42,0.96), var(--branded-primary));
+    }
+    .hero-cover {
+        position: absolute;
+        inset: 0;
+        opacity: 0.22;
+        pointer-events: none;
+    }
+    .hero-cover img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .hero-cover canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+    .hero-content,
+    .hero-side {
+        position: relative;
+        z-index: 1;
     }
     .profile-identity {
         display: flex;
@@ -29,20 +53,34 @@
         margin-bottom: 1rem;
     }
     .profile-avatar {
-        width: 78px;
-        height: 78px;
-        border-radius: 22px;
+        width: 86px;
+        height: 86px;
+        border-radius: 24px;
         background: rgba(255,255,255,0.14);
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 2rem;
-        border: 1px solid rgba(255,255,255,0.16);
+        border: 1px solid rgba(255,255,255,0.18);
         overflow: hidden;
+        box-shadow: 0 18px 36px rgba(15,23,42,0.18);
     }
     .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .profile-hero-copy h1 { margin: 0; font-size: clamp(2rem, 3vw, 2.8rem); }
-    .profile-hero-copy p { margin: 0.75rem 0 0; color: rgba(255,255,255,0.78); line-height: 1.78; max-width: 700px; }
+    .public-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.14);
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.35rem;
+    }
+    .profile-hero-copy h1 { margin: 0; font-size: clamp(2rem, 3vw, 2.9rem); line-height: 1.08; }
+    .profile-hero-copy p { margin: 0.75rem 0 0; color: rgba(255,255,255,0.78); line-height: 1.78; max-width: 720px; }
     .hero-stats {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -56,19 +94,20 @@
         border: 1px solid rgba(255,255,255,0.16);
     }
     .hero-stat small { display: block; color: rgba(255,255,255,0.7); margin-bottom: 0.3rem; }
-    .hero-stat strong { font-size: 1.25rem; }
-    .upload-card {
+    .hero-stat strong { font-size: 1.22rem; }
+    .hero-side-card {
         background: rgba(255,255,255,0.10);
         border: 1px solid rgba(255,255,255,0.16);
         border-radius: 24px;
-        padding: 1.35rem;
+        padding: 1.3rem;
+        backdrop-filter: blur(10px);
     }
-    .upload-card h3 { margin-top: 0; margin-bottom: 0.45rem; }
-    .upload-card p { margin: 0 0 1rem; color: rgba(255,255,255,0.74); line-height: 1.7; }
+    .hero-side-card h3 { margin-top: 0; margin-bottom: 0.45rem; }
+    .hero-side-card p { margin: 0 0 1rem; color: rgba(255,255,255,0.76); line-height: 1.7; }
     .upload-area {
         border: 1.5px dashed rgba(255,255,255,0.24);
         border-radius: 20px;
-        padding: 2.1rem 1.25rem;
+        padding: 2rem 1.15rem;
         text-align: center;
         cursor: pointer;
         transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
@@ -77,11 +116,10 @@
     .upload-area:hover, .upload-area.drag-over {
         transform: translateY(-2px);
         background: rgba(255,255,255,0.1);
-        border-color: rgba(255,255,255,0.4);
+        border-color: rgba(255,255,255,0.42);
     }
     .upload-list {
-        max-width: 820px;
-        margin: 1rem auto 0;
+        margin-top: 1rem;
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
@@ -141,18 +179,30 @@
 
 <main class="public-profile-shell">
     <section class="public-profile-hero">
-        <div class="profile-hero-copy">
+        <div class="hero-cover">
+            <% if (targetUser.publicCoverUrl) { %>
+                <img src="<%= targetUser.publicCoverUrl %>" alt="Public cover">
+            <% } else { %>
+                <canvas id="profileHeroCanvas" width="1280" height="720"></canvas>
+            <% } %>
+        </div>
+
+        <div class="hero-content profile-hero-copy">
             <div class="profile-identity">
                 <div class="profile-avatar">
-                    <% if (targetUser.branding?.logoUrl) { %>
+                    <% if (targetUser.profilePhotoUrl) { %>
+                        <img src="<%= targetUser.profilePhotoUrl %>" alt="Profile photo">
+                    <% } else if (targetUser.branding?.logoUrl) { %>
                         <img src="<%= targetUser.branding.logoUrl %>" alt="Profile logo">
                     <% } else { %>
                         <i class="fa-solid fa-user-astronaut"></i>
                     <% } %>
                 </div>
                 <div>
-                    <small style="display:block; color: rgba(255,255,255,0.7); margin-bottom:0.25rem;">Public file page</small>
-                    <h1><%= targetUser.branding?.pageTitle || `@${targetUser.username}` %></h1>
+                    <span class="public-status">
+                        <i class="fa-solid fa-circle-check"></i> Public Page Active
+                    </span>
+                    <h1><%= publicDisplayTitle %></h1>
                 </div>
             </div>
             <p><%= targetUser.publicBio || 'Halaman publik ini dipakai untuk menerima upload dan menampilkan file yang dibagikan oleh pengguna.' %></p>
@@ -173,19 +223,21 @@
             </div>
         </div>
 
-        <div class="upload-card">
-            <h3>Kirim file ke <%= targetUser.username %></h3>
-            <p>Upload langsung dari halaman publik ini untuk mempercepat pengumpulan file, revisi, atau bahan kerja.</p>
+        <div class="hero-side">
+            <div class="hero-side-card">
+                <h3>Kirim file ke <%= targetUser.username %></h3>
+                <p>Upload langsung dari public page ini untuk revisi, submission, bahan desain, atau file dari klien.</p>
 
-            <div class="upload-area" id="dropZone">
-                <input type="file" id="fileInput" multiple hidden>
-                <div class="upload-placeholder">
-                    <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2rem; margin-bottom: 0.75rem;"></i>
-                    <p style="margin:0;"><strong>Upload file</strong> atau drag & drop di sini</p>
+                <div class="upload-area" id="dropZone">
+                    <input type="file" id="fileInput" multiple hidden>
+                    <div class="upload-placeholder">
+                        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2rem; margin-bottom: 0.75rem;"></i>
+                        <p style="margin:0;"><strong>Upload file</strong> atau drag & drop di sini</p>
+                    </div>
                 </div>
-            </div>
 
-            <div id="uploadList" class="upload-list"></div>
+                <div id="uploadList" class="upload-list"></div>
+            </div>
         </div>
     </section>
 
@@ -223,7 +275,7 @@
                 </div>
                 <div class="public-file-body">
                     <a href="/w-upload/file/<%= file.customAlias %>"><%= file.originalName %></a>
-                    <small><%= (file.size / 1024 / 1024).toFixed(2) %> MB • <%= file.downloads || 0 %> download</small>
+                    <small><%= (file.size / 1024 / 1024).toFixed(2) %> MB | <%= file.downloads || 0 %> download</small>
                 </div>
             </article>
         <% }) %>
@@ -236,6 +288,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('fileInput');
     const uploadList = document.getElementById('uploadList');
     const publicUsername = "<%= targetUser.username %>";
+    const heroCanvas = document.getElementById('profileHeroCanvas');
+
+    if (heroCanvas) {
+        const ctx = heroCanvas.getContext('2d');
+        const width = heroCanvas.width;
+        const height = heroCanvas.height;
+        const primary = '<%= targetUser.branding?.primaryColor || targetUser.publicThemeColor || "#2563eb" %>';
+
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#0f172a');
+        gradient.addColorStop(0.6, primary);
+        gradient.addColorStop(1, '#f97316');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.globalAlpha = 0.14;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(width - 180, 130, 140, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(150, height - 80, 210, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.roundRect(80 + i * 55, 90 + i * 26, 220, 62, 22);
+            ctx.stroke();
+        }
+    }
 
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });

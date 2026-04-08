@@ -94,19 +94,26 @@ router.get('/u/:username', auth.checkAuthStatus, async (req, res) => {
             totalSize: files.reduce((sum, item) => sum + (item.size || 0), 0)
         };
         
-        res.render('public_profile', { targetUser, files, publicStats });
+        res.render('public_profile', {
+            targetUser,
+            files,
+            publicStats,
+            publicDisplayTitle: targetUser.publicTitle || targetUser.branding?.pageTitle || `@${targetUser.username}`
+        });
     } catch (e) { res.status(500).render('404'); }
 });
 
 router.get('/ref/:username/banner.svg', auth.checkAuthStatus, async (req, res) => {
     try {
-        const referrer = await User.findOne({ username: req.params.username }).select('username referralCode referralCount branding');
+        const referrer = await User.findOne({ username: req.params.username }).select('username referralCode referralCount branding profilePhotoUrl publicThemeColor');
         if (!referrer) return res.status(404).send('Referral banner not found.');
 
-        const primary = escapeXml(referrer.branding?.primaryColor || '#1d4ed8');
+        const primary = escapeXml(referrer.branding?.primaryColor || referrer.publicThemeColor || '#1d4ed8');
         const username = escapeXml(referrer.username || 'user');
         const referralCode = escapeXml(referrer.referralCode || 'N/A');
         const referralCount = escapeXml(String(referrer.referralCount || 0));
+        const profilePhotoUrl = typeof referrer.profilePhotoUrl === 'string' ? referrer.profilePhotoUrl.trim() : '';
+        const encodedPhotoUrl = profilePhotoUrl ? escapeXml(profilePhotoUrl) : '';
 
         const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
@@ -120,6 +127,7 @@ router.get('/ref/:username/banner.svg', auth.checkAuthStatus, async (req, res) =
   <rect width="1200" height="630" rx="0" fill="url(#bg)"/>
   <circle cx="980" cy="120" r="150" fill="rgba(255,255,255,0.08)"/>
   <circle cx="180" cy="520" r="220" fill="rgba(255,255,255,0.08)"/>
+  ${encodedPhotoUrl ? `<defs><clipPath id="avatarClip"><circle cx="1030" cy="425" r="84"/></clipPath></defs>` : ''}
   <text x="72" y="88" fill="white" font-size="34" font-weight="700" font-family="Arial, Helvetica, sans-serif">w upload referral</text>
   <text x="72" y="210" fill="white" font-size="72" font-weight="800" font-family="Arial, Helvetica, sans-serif">Gabung lewat @${username}</text>
   <text x="72" y="278" fill="rgba(255,255,255,0.88)" font-size="34" font-weight="500" font-family="Arial, Helvetica, sans-serif">Dapat bonus storage dan akses workspace yang lebih rapi.</text>
@@ -129,6 +137,11 @@ router.get('/ref/:username/banner.svg', auth.checkAuthStatus, async (req, res) =
   <rect x="538" y="342" width="300" height="136" rx="24" fill="rgba(255,255,255,0.18)"/>
   <text x="574" y="390" fill="white" font-size="28" font-weight="600" font-family="Arial, Helvetica, sans-serif">Total referrals</text>
   <text x="574" y="448" fill="white" font-size="48" font-weight="800" font-family="Arial, Helvetica, sans-serif">${referralCount}</text>
+  <circle cx="1030" cy="425" r="92" fill="rgba(255,255,255,0.18)"/>
+  ${encodedPhotoUrl
+            ? `<image href="${encodedPhotoUrl}" x="946" y="341" width="168" height="168" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>`
+            : `<circle cx="1030" cy="425" r="84" fill="rgba(255,255,255,0.22)"/>
+               <text x="1003" y="441" fill="white" font-size="58" font-weight="800" font-family="Arial, Helvetica, sans-serif">${escapeXml((referrer.username || 'U').slice(0,1).toUpperCase())}</text>`}
   <rect x="72" y="532" width="330" height="10" rx="5" fill="#FEF3C7"/>
   <text x="72" y="580" fill="white" font-size="26" font-weight="600" font-family="Arial, Helvetica, sans-serif">Bonus 50 MB untuk referrer dan pengguna baru</text>
 </svg>`;

@@ -7,6 +7,7 @@ const User = require('../models/user');
 const Team = require('../models/team');
 const FileRequest = require('../models/fileRequest');
 const AiLog = require('../models/aiLog');
+const AiInsight = require('../models/aiInsight');
 const { extractContent, summarizeText, searchInText } = require('../utils/fileProcessor');
 const { translateText } = require('../utils/tr');
 const { getDocsContent } = require('../utils/docsLoader');
@@ -22,6 +23,19 @@ function maskPII(text) {
 function cleanEntity(str) {
     if (!str) return '';
     return str.trim().replace(/^['"]|['"]$/g, '');
+}
+
+function formatInsightMarkdown(insight) {
+    const suggestions = (insight.metadata?.suggestions || [])
+        .filter(Boolean)
+        .map(item => `- ${item}`)
+        .join('\n');
+
+    return [
+        `**${insight.title}**`,
+        insight.summary,
+        suggestions
+    ].filter(Boolean).join('\n\n');
 }
 
 router.post('/chat', auth.protectApi, async (req, res) => {
@@ -402,6 +416,46 @@ router.post('/feedback/:id', auth.protectApi, async (req, res) => {
         res.json({ message: 'Feedback received' });
     } catch (e) {
         res.status(500).json({ message: 'Error' });
+    }
+});
+
+router.get('/insights', auth.protectApi, async (req, res) => {
+    try {
+        const pollMode = req.query.mode === 'poll';
+        const query = { user: req.user.id };
+
+        if (pollMode) {
+            query.deliveredAt = null;
+        }
+
+        const insights = await AiInsight.find(query)
+            .sort({ createdAt: -1 })
+            .limit(pollMode ? 6 : 20)
+            .lean();
+
+        if (pollMode && insights.length > 0) {
+            await AiInsight.updateMany(
+                { _id: { $in: insights.map(item => item._id) } },
+                { $set: { deliveredAt: new Date() } }
+            );
+        }
+
+        res.json({
+            insights: insights
+                .reverse()
+                .map(insight => ({
+                    id: insight._id,
+                    title: insight.title,
+                    summary: insight.summary,
+                    severity: insight.severity,
+                    createdAt: insight.createdAt,
+                    message: formatInsightMarkdown(insight),
+                    metadata: insight.metadata || {}
+                }))
+        });
+    } catch (error) {
+        console.error('AI Insight Error:', error);
+        res.status(500).json({ message: 'Failed to load AI insights.' });
     }
 });
 

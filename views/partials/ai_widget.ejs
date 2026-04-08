@@ -3,6 +3,7 @@
 <div id="ai-widget-container">
     <button id="ai-toggle-btn" aria-label="Open AI Assistant">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <span class="ai-toggle-badge hidden" id="aiInsightBadge">0</span>
     </button>
 
     <div id="ai-chat-window" class="hidden">
@@ -10,14 +11,14 @@
             <div class="ai-title">
                 <i class="fa-solid fa-robot"></i>
                 <span>AI Assistant</span>
-                <span class="ai-status">Online</span>
+                <span class="ai-status" id="aiStatusBadge">Watching uploads</span>
             </div>
             <button id="ai-close-btn"><i class="fa-solid fa-chevron-down"></i></button>
         </div>
         
         <div id="ai-messages">
             <div class="ai-msg bot">
-                Hi! I'm your file copilot. I can find, manage, and protect your files. Tap a command below or ask me anything.
+                Hi! I'm your file copilot. I now watch your uploads in the background, send analysis per account, and help manage files in real time.
             </div>
         </div>
 
@@ -36,8 +37,9 @@
 
 <style>
     #ai-widget-container { position: fixed; bottom: 25px; right: 25px; z-index: 10000; font-family: system-ui, -apple-system, sans-serif; }
-    #ai-toggle-btn { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; align-items: center; justify-content: center; }
+    #ai-toggle-btn { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; align-items: center; justify-content: center; position: relative; }
     #ai-toggle-btn:hover { transform: scale(1.1) rotate(10deg); }
+    .ai-toggle-badge { position: absolute; top: -2px; right: -2px; min-width: 22px; height: 22px; border-radius: 999px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; background: #ef4444; color: white; font-size: 0.74rem; font-weight: 800; border: 2px solid white; }
     #ai-chat-window { width: 380px; height: 600px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; position: absolute; bottom: 80px; right: 0; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.2); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(20px) scale(0.95); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); transform-origin: bottom right; }
     #ai-chat-window:not(.hidden) { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
     .ai-header { padding: 16px; background: linear-gradient(135deg, var(--primary), #6366f1); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
@@ -74,6 +76,7 @@
     .ai-feedback button:hover { transform: scale(1.2); color: var(--text); opacity: 1; }
     .active-like { color: #22c55e !important; opacity: 1 !important; }
     .active-dislike { color: #ef4444 !important; opacity: 1 !important; }
+    .hidden { display: none !important; }
 
     @media (max-width: 480px) {
         #ai-widget-container { right: 20px; bottom: 20px; }
@@ -93,6 +96,10 @@
         const msgs = document.getElementById('ai-messages');
         const typing = document.getElementById('ai-typing');
         const suggestionsBox = document.getElementById('ai-suggestions');
+        const aiInsightBadge = document.getElementById('aiInsightBadge');
+        const aiStatusBadge = document.getElementById('aiStatusBadge');
+        let unseenInsights = 0;
+        let lastInsightPollAt = 0;
 
         // NEW, EXPANDED COMMAND LIST
         const newCommands = [
@@ -145,6 +152,8 @@
             const isHidden = widget.classList.contains('hidden');
             if (isHidden) {
                 widget.classList.remove('hidden');
+                unseenInsights = 0;
+                aiInsightBadge.classList.add('hidden');
                 setTimeout(() => input.focus(), 300);
             } else {
                 widget.classList.add('hidden');
@@ -166,6 +175,43 @@
             }
             msgs.appendChild(div);
             msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
+        };
+
+        const updateInsightBadge = () => {
+            if (!unseenInsights) {
+                aiInsightBadge.classList.add('hidden');
+                return;
+            }
+            aiInsightBadge.textContent = unseenInsights > 9 ? '9+' : String(unseenInsights);
+            aiInsightBadge.classList.remove('hidden');
+        };
+
+        const renderInsight = insight => {
+            if (!insight?.message) return;
+            addMsg(`### Live upload insight\n${insight.message}`, 'bot');
+        };
+
+        const pollInsights = async () => {
+            try {
+                const response = await fetch('/api/ai/insights?mode=poll');
+                if (!response.ok) return;
+                const data = await response.json();
+                const insights = Array.isArray(data.insights) ? data.insights : [];
+                if (!insights.length) {
+                    aiStatusBadge.textContent = 'Watching uploads';
+                    return;
+                }
+
+                aiStatusBadge.textContent = 'New analysis ready';
+                insights.forEach(renderInsight);
+                if (widget.classList.contains('hidden')) {
+                    unseenInsights += insights.length;
+                    updateInsightBadge();
+                }
+                lastInsightPollAt = Date.now();
+            } catch (error) {
+                aiStatusBadge.textContent = 'Realtime standby';
+            }
         };
 
         window.rateMsg = (btn, id, type) => {
@@ -243,5 +289,13 @@
 
         sendBtn.addEventListener('click', handleSend);
         input.addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
+
+        pollInsights();
+        setInterval(pollInsights, 20000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && Date.now() - lastInsightPollAt > 12000) {
+                pollInsights();
+            }
+        });
     });
 </script>

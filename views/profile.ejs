@@ -45,9 +45,18 @@
                     </div>
                 </div>
                 <div class="profile-hero-panel">
-                    <small>Public page</small>
-                    <strong><%= user.isPublicProfile ? 'Active' : 'Hidden' %></strong>
-                    <span><%= user.isPublicProfile ? `/u/${user.username}` : 'Aktifkan public profile untuk membagikan halaman Anda.' %></span>
+                    <div class="hero-panel-profile">
+                        <% if (user.profilePhotoUrl) { %>
+                            <img src="<%= user.profilePhotoUrl %>" alt="Profile photo">
+                        <% } else { %>
+                            <div class="hero-panel-fallback"><%= user.username.slice(0, 1).toUpperCase() %></div>
+                        <% } %>
+                        <div>
+                            <small>Public page</small>
+                            <strong><%= user.isPublicProfile ? 'Active' : 'Hidden' %></strong>
+                            <span><%= user.isPublicProfile ? (user.publicTitle || `/u/${user.username}`) : 'Aktifkan public profile untuk membagikan halaman Anda.' %></span>
+                        </div>
+                    </div>
                     <a href="/billing" class="btn primary-btn" style="width:100%; justify-content:center;">
                         <i class="fa-solid fa-credit-card"></i> Billing & Payment
                     </a>
@@ -70,8 +79,40 @@
                             <input type="email" id="accountEmail" class="full-input" placeholder="you@example.com" value="<%= user.email || '' %>">
                         </div>
                         <div class="form-group">
+                            <label>Public Title</label>
+                            <input type="text" id="publicTitle" class="full-input" placeholder="My Public Page" value="<%= user.publicTitle || '' %>">
+                        </div>
+                        <div class="form-group">
                             <label>Bio</label>
                             <textarea id="publicBio" class="full-input" rows="3" placeholder="Tell something about yourself..."><%= user.publicBio || '' %></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Profile Photo</label>
+                            <input type="file" id="profilePhotoFile" class="full-input" accept="image/*">
+                            <small class="field-help">Foto ini dipakai di public page, referral banner, dan panel profil.</small>
+                            <div class="branding-preview" id="profilePhotoPreview">
+                                <% if (user.profilePhotoUrl) { %>
+                                    <img src="<%= user.profilePhotoUrl %>" alt="Profile photo preview">
+                                <% } else { %>
+                                    <div class="branding-preview-empty"><i class="fa-solid fa-user-circle"></i><span>No profile photo selected</span></div>
+                                <% } %>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Public Cover / Decoration</label>
+                            <input type="file" id="publicCoverFile" class="full-input" accept="image/*">
+                            <small class="field-help">Gambar ini dipakai sebagai dekorasi header public profile.</small>
+                            <div class="branding-preview" id="publicCoverPreview">
+                                <% if (user.publicCoverUrl) { %>
+                                    <img src="<%= user.publicCoverUrl %>" alt="Public cover preview">
+                                <% } else { %>
+                                    <div class="branding-preview-empty"><i class="fa-solid fa-panorama"></i><span>No cover selected</span></div>
+                                <% } %>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Public Theme Color</label>
+                            <input type="color" id="publicThemeColor" class="full-input" value="<%= user.publicThemeColor || '#2563eb' %>" style="padding: 5px; height: 40px;">
                         </div>
                         <div class="form-row">
                             <label class="toggle-switch">
@@ -132,6 +173,10 @@
                             <input type="text" id="newKeyLabel" class="full-input" placeholder="Key Label (e.g. App Server)">
                             <button id="generateKeyBtn" class="btn primary-btn" style="white-space:nowrap;">Generate</button>
                         </div>
+                        <p class="field-help" style="margin-top:-0.35rem;">
+                            <% const apiKeyLimit = user.plan === 'pro' ? 25 : 3; %>
+                            API key aktif: <strong><%= user.apiKeys ? user.apiKeys.length : 0 %></strong> / <strong><%= apiKeyLimit %></strong> untuk plan <%= user.plan.toUpperCase() %>.
+                        </p>
                         
                         <div id="apiKeysList" class="items-list">
                             <% if(user.apiKeys && user.apiKeys.length > 0) { %>
@@ -405,6 +450,28 @@
         background: rgba(255,255,255,0.10);
         border: 1px solid rgba(255,255,255,0.16);
     }
+    .hero-panel-profile {
+        display: flex;
+        gap: 0.9rem;
+        align-items: center;
+    }
+    .hero-panel-profile img,
+    .hero-panel-fallback {
+        width: 64px;
+        height: 64px;
+        border-radius: 20px;
+        object-fit: cover;
+        border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.16);
+    }
+    .hero-panel-fallback {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 1.45rem;
+        color: #fff;
+    }
     .profile-hero-panel small { color: rgba(255,255,255,0.7); }
     .profile-hero-panel strong { font-size: 1.6rem; }
     .profile-hero-panel span { color: rgba(255,255,255,0.72); line-height: 1.6; }
@@ -538,17 +605,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    let profilePhotoBase64 = <%- JSON.stringify(user.profilePhotoUrl || '') %>;
+    let publicCoverBase64 = <%- JSON.stringify(user.publicCoverUrl || '') %>;
+
+    function bindImagePreview(fileInputId, previewId, emptyIcon, emptyText, onLoad) {
+        const input = document.getElementById(fileInputId);
+        const preview = document.getElementById(previewId);
+        if (!input || !preview) return;
+
+        input.addEventListener('change', () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                preview.innerHTML = `<img src="${reader.result}" alt="Preview">`;
+                if (typeof onLoad === 'function') onLoad(reader.result);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        if (!preview.innerHTML.trim()) {
+            preview.innerHTML = `<div class="branding-preview-empty"><i class="${emptyIcon}"></i><span>${emptyText}</span></div>`;
+        }
+    }
+
+    bindImagePreview('profilePhotoFile', 'profilePhotoPreview', 'fa-solid fa-user-circle', 'No profile photo selected', (value) => {
+        profilePhotoBase64 = value;
+    });
+    bindImagePreview('publicCoverFile', 'publicCoverPreview', 'fa-solid fa-panorama', 'No cover selected', (value) => {
+        publicCoverBase64 = value;
+    });
+
     const saveProfileBtn = document.getElementById('saveProfileBtn');
     if(saveProfileBtn) {
         saveProfileBtn.addEventListener('click', async () => {
             const publicBio = document.getElementById('publicBio').value;
             const isPublicProfile = document.getElementById('publicProfileToggle').checked;
             const email = document.getElementById('accountEmail').value.trim();
+            const publicTitle = document.getElementById('publicTitle').value.trim();
+            const publicThemeColor = document.getElementById('publicThemeColor').value;
             try {
                 const res = await fetch('/api/profile/settings', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ publicBio, isPublicProfile, email })
+                    body: JSON.stringify({
+                        publicBio,
+                        isPublicProfile,
+                        email,
+                        publicTitle,
+                        publicThemeColor,
+                        profilePhotoBase64,
+                        publicCoverBase64
+                    })
                 });
                 const data = await res.json();
                 if(res.ok) showToast('Profile updated', 'success');
@@ -644,15 +752,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if(generateKeyBtn) {
         generateKeyBtn.addEventListener('click', async () => {
             const label = document.getElementById('newKeyLabel').value || 'Unnamed Key';
+            generateKeyBtn.disabled = true;
+            const originalContent = generateKeyBtn.innerHTML;
+            generateKeyBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
             try {
                 const res = await fetch('/api/profile/api-key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ label })
                 });
+                const data = await res.json();
                 if(res.ok) location.reload();
-                else showToast('Failed to generate key', 'error');
+                else showToast(data.message || 'Failed to generate key', 'error');
             } catch(e) { showToast('Network error', 'error'); }
+            finally {
+                generateKeyBtn.disabled = false;
+                generateKeyBtn.innerHTML = originalContent;
+            }
         });
     }
 
