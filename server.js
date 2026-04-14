@@ -185,5 +185,3 @@ app.use((err, req, res, next) => {
 
 const PORT = 3000;
 app.listen(PORT);
-
-module.exports = { app, connectDB };
