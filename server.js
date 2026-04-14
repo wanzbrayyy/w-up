@@ -13,17 +13,25 @@ const File = require('./models/file');
 const { loadSystemConfig } = require('./middleware/system');
 const { languages } = require('./utils/tr');
 
-const mongoUri = process.env.MONGO_URI || '';
-if (mongoUri.startsWith('mongodb+srv://')) {
-  const dnsServers = (process.env.MONGO_DNS_SERVERS || '1.1.1.1,8.8.8.8')
-    .split(',')
-    .map(server => server.trim())
-    .filter(Boolean);
+/* =========================
+   ✅ HARD DNS (1 saja)
+========================= */
+dns.setServers(['1.1.1.1']);
 
-  if (dnsServers.length > 0) {
-    dns.setServers(dnsServers);
-  }
-}
+/* =========================
+   ✅ FORCE IPv4 (PENTING!)
+========================= */
+dns.setDefaultResultOrder('ipv4first');
+
+/* =========================
+   ✅ HARD MONGO URI (NO ENV)
+========================= */
+const mongoUri = 'mongodb+srv://wuploadcloud_db_user:sq8TwuX9H9jl25a6@cluster0.jzp6pzl.mongodb.net/w-up?appName=Cluster0';
+
+/* =========================
+   ✅ FIX BUFFERING ERROR
+========================= */
+mongoose.set('bufferCommands', false);
 
 const app = express();
 
@@ -41,14 +49,21 @@ async function reconcileMongoIndexes() {
   }
 }
 
+/* =========================
+   ROUTES
+========================= */
 const authRoutes = require('./routes/auth');
 const viewRoutes = require('./routes/view');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const aiRoutes = require('./routes/ai'); 
 const reqRoutes = require('./routes/req'); 
+
 app.set('trust proxy', 1);
 
+/* =========================
+   SECURITY
+========================= */
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -100,7 +115,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.APP_URL || 'https://wanzofc.site', 
+  origin: 'https://wanzofc.site',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-CSRF-Token']
@@ -119,17 +134,33 @@ app.get('/robots.txt', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'robots.txt'));
 });
 
+/* =========================
+   ✅ MONGOOSE CONNECT (RETRY)
+========================= */
+async function connectDB() {
+  try {
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 15000,
+    });
+
+    console.log('MongoDB Connected');
+    await reconcileMongoIndexes();
+
+  } catch (err) {
+    console.error('MongoDB Connection Failed, retrying...', err.message);
+    setTimeout(connectDB, 5000); // retry tiap 5 detik
+  }
+}
+
 mongoose.connection.on('error', (err) => {
   console.error('MongoDB Connection Error:', err);
 });
 
-mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 15000 })
-  .then(async () => {
-    console.log('MongoDB Connected');
-    await reconcileMongoIndexes();
-  })
-  .catch(err => console.error('MongoDB Initial Connection Error:', err));
+connectDB();
 
+/* =========================
+   CSRF
+========================= */
 const csrfProtection = csurf({ cookie: true });
 
 app.use((req, res, next) => {
@@ -161,6 +192,9 @@ app.get('/ads.txt', async (req, res) => {
     }
 });
 
+/* =========================
+   ROUTES
+========================= */
 app.use('/api/auth', authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api', apiRoutes);
@@ -168,6 +202,9 @@ app.use('/admin', adminRoutes);
 app.use('/request', reqRoutes);
 app.use('/', viewRoutes);
 
+/* =========================
+   ERROR HANDLER
+========================= */
 app.use((err, req, res, next) => {
   if (err.code === 'EBADCSRFTOKEN') {
     return res.status(403).json({ status: 'error', message: 'Invalid or missing CSRF Token' });
@@ -176,7 +213,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: 'error', message: 'Internal Server Error' });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
